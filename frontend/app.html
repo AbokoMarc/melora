@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Melora</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0d0d0f">
+<style>
+  :root { --bg:#0d0d0f; --panel:#151517; --panel2:#1b1b1f; --border:#2a2a30; --text:#e8e6e1; --muted:#8b8a92; --accent:#d9822b; --bubble-me:#3a2a14; --green:#3ecf6e; --amber:#e0a53c; --red:#e05555; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  #app { display:flex; height:100vh; }
+  #sidebar { width:300px; border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
+  #sidebar.hidden-mobile { display:none; }
+  .brand { display:flex; align-items:center; gap:10px; padding:16px; font-family:Georgia,serif; font-size:1.2rem; }
+  .brand .badge { width:28px; height:28px; border-radius:7px; background:var(--accent); color:#111; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.9rem; }
+  #search { margin:0 14px 12px; padding:9px 12px; background:#0f0f12; border:1px solid var(--border); border-radius:8px; color:var(--text); width:calc(100% - 28px); }
+  #convList { flex:1; overflow-y:auto; }
+  .conv-item { display:flex; gap:10px; padding:10px 14px; cursor:pointer; border-left:3px solid transparent; }
+  .conv-item:hover { background:var(--panel2); }
+  .conv-item.active { background:var(--panel2); border-left-color:var(--accent); }
+  .avatar { width:38px; height:38px; border-radius:50%; background:#3a3540; display:flex; align-items:center; justify-content:center; font-size:.8rem; font-weight:600; flex-shrink:0; }
+  .conv-meta { flex:1; min-width:0; }
+  .conv-name { font-weight:600; font-size:.9rem; display:flex; justify-content:space-between; }
+  .conv-preview { color:var(--muted); font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .unread { background:var(--accent); color:#111; border-radius:10px; padding:1px 7px; font-size:.72rem; font-weight:700; }
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #chatHeader { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+  #messages { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:60%; padding:9px 13px; border-radius:12px; font-size:.9rem; line-height:1.4; }
+  .msg.them { background:var(--panel2); align-self:flex-start; }
+  .msg.me { background:var(--bubble-me); align-self:flex-end; }
+  .msg .meta { font-size:.68rem; color:var(--muted); margin-top:4px; text-align:right; }
+  #composer { display:flex; gap:10px; padding:14px; border-top:1px solid var(--border); }
+  #composer input { flex:1; padding:11px 14px; background:#0f0f12; border:1px solid var(--border); border-radius:20px; color:var(--text); }
+  #composer button { background:var(--accent); border:none; border-radius:50%; width:42px; height:42px; cursor:pointer; font-size:1.1rem; }
+  #typingIndicator { padding:0 18px; color:var(--muted); font-size:.78rem; font-style:italic; height:16px; }
+  .empty-state { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); }
+  #topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); }
+  #topbar .btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:8px; cursor:pointer; font-size:.82rem; }
+  #adminModal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:50; }
+  #adminModal .box { background:var(--panel); width:min(720px, 92vw); max-height:85vh; overflow-y:auto; border-radius:12px; border:1px solid var(--border); padding:20px; }
+  #adminModal h2 { margin-top:0; }
+  table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  th, td { padding:8px; text-align:left; border-bottom:1px solid var(--border); }
+  .pill { padding:2px 8px; border-radius:10px; font-size:.72rem; }
+  .pill.active { background:#183a26; color:var(--green); }
+  .pill.suspended { background:#3a1414; color:var(--red); }
+  .tab-btn { background:none; border:none; color:var(--muted); padding:8px 4px; margin-right:16px; cursor:pointer; border-bottom:2px solid transparent; }
+  .tab-btn.active { color:var(--text); border-color:var(--accent); }
+  .row-actions button { font-size:.72rem; padding:4px 8px; margin-right:4px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:6px; cursor:pointer; }
+  .close-x { float:right; cursor:pointer; color:var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="brand"><div class="badge">M</div>Melora</div>
+    <input id="search" placeholder="Rechercher...">
+    <div id="convList"></div>
+    <div id="topbar">
+      <span id="meName" style="font-size:.85rem;"></span>
+      <button class="btn" id="adminBtn" style="display:none;" onclick="openAdmin()">Administration</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="chatHeader"><div class="empty-state" style="width:100%;">Sélectionne une conversation</div></div>
+    <div id="messages"></div>
+    <div id="typingIndicator"></div>
+    <div id="composer" style="display:none;">
+      <input id="msgInput" placeholder="Écrire un message..." onkeydown="if(event.key==='Enter')sendMessage()" oninput="onTyping()">
+      <button onclick="sendMessage()">➤</button>
+    </div>
+  </div>
+</div>
+
+<div id="adminModal">
+  <div class="box">
+    <span class="close-x" onclick="closeAdmin()">✕</span>
+    <h2>Administration</h2>
+    <div>
+      <button class="tab-btn active" onclick="switchAdminTab('users')">Utilisateurs</button>
+      <button class="tab-btn" onclick="switchAdminTab('conversations')">Conversations</button>
+      <button class="tab-btn" id="logTab" style="display:none;" onclick="switchAdminTab('log')">Journal d'audit</button>
+    </div>
+    <div id="adminUsers"></div>
+    <div id="adminConversations" style="display:none;"></div>
+    <div id="adminLog" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem('melora_token');
+if (!token) window.location.href = '/login.html';
+const me = JSON.parse(localStorage.getItem('melora_user') || '{}');
+document.getElementById('meName').textContent = me.display_name || '';
+if (me.role === 'admin' || me.role === 'super_admin') document.getElementById('adminBtn').style.display = 'inline-block';
+if (me.role === 'super_admin') document.getElementById('logTab').style.display = 'inline-block';
+
+if (localStorage.getItem('melora_must_change') === '1') {
+  const np = prompt("Un administrateur a réinitialisé votre mot de passe. Choisissez un nouveau mot de passe (8 caractères min) :");
+  if (np && np.length >= 8) {
+    api('/api/auth/change-password', 'POST', { new_password: np }).then(() => localStorage.removeItem('melora_must_change'));
+  }
+}
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) { localStorage.clear(); window.location.href = '/login.html'; return; }
+  return res.json();
+}
+
+let activeConvId = null;
+let typingTimeout = null;
+
+async function loadConversations() {
+  const data = await api('/api/conversations');
+  const list = document.getElementById('convList');
+  list.innerHTML = '';
+  (data.conversations || []).forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'conv-item' + (c.id === activeConvId ? ' active' : '');
+    div.onclick = () => openConversation(c.id, c.name || 'Conversation');
+    div.innerHTML = `
+      <div class="avatar">${(c.name || '?')[0].toUpperCase()}</div>
+      <div class="conv-meta">
+        <div class="conv-name"><span>${c.name || 'Conversation privée'}</span>${c.unread_count ? `<span class="unread">${c.unread_count}</span>` : ''}</div>
+        <div class="conv-preview">${c.last_message || 'Aucun message'}</div>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+
+async function openConversation(id, name) {
+  activeConvId = id;
+  document.getElementById('chatHeader').innerHTML = `<div class="avatar">${name[0].toUpperCase()}</div><strong>${name}</strong>`;
+  document.getElementById('composer').style.display = 'flex';
+  const data = await api(`/api/conversations/${id}/messages`);
+  renderMessages(data.messages || []);
+  loadConversations();
+  const last = (data.messages || []).at(-1);
+  if (last) api(`/api/conversations/${id}/read`, 'PUT', { up_to_message_id: last.id });
+}
+
+function renderMessages(msgs) {
+  const box = document.getElementById('messages');
+  box.innerHTML = '';
+  msgs.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.sender_id === me.id ? 'me' : 'them');
+    div.innerHTML = `${escapeHtml(m.content || '')}<div class="meta">${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>`;
+    box.appendChild(div);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const content = input.value.trim();
+  if (!content || !activeConvId) return;
+  input.value = '';
+  const clientId = crypto.randomUUID();
+  await api(`/api/conversations/${activeConvId}/messages`, 'POST', { client_message_id: clientId, type: 'text', content });
+  const data = await api(`/api/conversations/${activeConvId}/messages`);
+  renderMessages(data.messages || []);
+}
+
+function onTyping() {
+  if (!activeConvId) return;
+  api(`/api/conversations/${activeConvId}/typing`, 'POST', { typing: true });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => api(`/api/conversations/${activeConvId}/typing`, 'POST', { typing: false }), 2000);
+}
+
+// --- Temps réel ---
+const es = new EventSource(`/api/stream?token=${encodeURIComponent(token)}`);
+es.addEventListener('message.new', (e) => {
+  const data = JSON.parse(e.data);
+  if (data.conversation_id === activeConvId) openConversation(activeConvId, document.querySelector('#chatHeader strong')?.textContent || '');
+  else loadConversations();
+});
+es.addEventListener('typing.update', (e) => {
+  const data = JSON.parse(e.data);
+  if (data.conversation_id !== activeConvId) return;
+  document.getElementById('typingIndicator').textContent = data.typing ? 'en train d\'écrire...' : '';
+});
+es.addEventListener('force_logout', () => {
+  alert('Votre compte a été suspendu par un administrateur.');
+  localStorage.clear();
+  window.location.href = '/login.html';
+});
+
+// --- Recherche pour démarrer une conversation ---
+document.getElementById('search').addEventListener('input', async (e) => {
+  const q = e.target.value.trim();
+  if (q.length < 2) return;
+  const data = await api(`/api/users/search?q=${encodeURIComponent(q)}`);
+  const list = document.getElementById('convList');
+  list.innerHTML = '';
+  (data.users || []).forEach(u => {
+    const div = document.createElement('div');
+    div.className = 'conv-item';
+    div.onclick = async () => {
+      const r = await api('/api/conversations', 'POST', { peer_id: u.id });
+      openConversation(r.conversation.id, u.display_name);
+      document.getElementById('search').value = '';
+      loadConversations();
+    };
+    div.innerHTML = `<div class="avatar">${u.display_name[0].toUpperCase()}</div><div class="conv-meta"><div class="conv-name">${u.display_name}</div><div class="conv-preview">@${u.username}</div></div>`;
+    list.appendChild(div);
+  });
+});
+
+// --- Administration ---
+function openAdmin() { document.getElementById('adminModal').style.display = 'flex'; loadAdminUsers(); }
+function closeAdmin() { document.getElementById('adminModal').style.display = 'none'; }
+function switchAdminTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('adminUsers').style.display = tab === 'users' ? 'block' : 'none';
+  document.getElementById('adminConversations').style.display = tab === 'conversations' ? 'block' : 'none';
+  document.getElementById('adminLog').style.display = tab === 'log' ? 'block' : 'none';
+  if (tab === 'users') loadAdminUsers();
+  if (tab === 'conversations') loadAdminConversations();
+  if (tab === 'log') loadAdminLog();
+}
+
+async function loadAdminUsers() {
+  const data = await api('/api/admin/users');
+  const el = document.getElementById('adminUsers');
+  el.innerHTML = `<table><thead><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${
+    (data.users || []).map(u => `
+      <tr>
+        <td>${u.display_name}<br><span style="color:var(--muted)">@${u.username}</span></td>
+        <td>${u.role}</td>
+        <td><span class="pill ${u.status}">${u.status === 'active' ? 'Actif' : 'Suspendu'}</span></td>
+        <td class="row-actions">
+          ${u.role !== 'super_admin' ? (u.status === 'active'
+            ? `<button onclick="suspendUser(${u.id})">Suspendre</button>`
+            : `<button onclick="unsuspendUser(${u.id})">Réactiver</button>`) : ''}
+          <button onclick="resetPassword(${u.id})">Réinit. mdp</button>
+          ${me.role === 'super_admin' && u.role !== 'super_admin' ? `<button onclick="changeRole(${u.id}, '${u.role === 'admin' ? 'member' : 'admin'}')">${u.role === 'admin' ? 'Rétrograder' : 'Promouvoir admin'}</button>` : ''}
+        </td>
+      </tr>`).join('')
+  }</tbody></table>`;
+}
+async function suspendUser(id) {
+  const reason = prompt('Motif de la suspension (optionnel) :') || null;
+  await api(`/api/admin/users/${id}/suspend`, 'PUT', { reason });
+  loadAdminUsers();
+}
+async function unsuspendUser(id) { await api(`/api/admin/users/${id}/unsuspend`, 'PUT'); loadAdminUsers(); }
+async function resetPassword(id) {
+  const r = await api(`/api/admin/users/${id}/reset-password`, 'POST', {});
+  alert(`Mot de passe temporaire généré : ${r.temporary_password}\n\nTransmets-le à la personne — il ne sera plus jamais affiché, et un changement sera exigé à sa prochaine connexion.`);
+}
+async function changeRole(id, role) { await api(`/api/admin/users/${id}/role`, 'PUT', { role }); loadAdminUsers(); }
+
+async function loadAdminConversations() {
+  const data = await api('/api/admin/conversations');
+  const el = document.getElementById('adminConversations');
+  el.innerHTML = `<table><thead><tr><th>Conversation</th><th>Type</th><th>Membres</th><th>Messages</th><th></th></tr></thead><tbody>${
+    (data.conversations || []).map(c => `
+      <tr>
+        <td>${c.name || 'Conversation privée #' + c.id}</td>
+        <td>${c.type}</td>
+        <td>${c.member_count}</td>
+        <td>${c.message_count}</td>
+        <td><button class="row-actions" onclick="viewConvMessages(${c.id})" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;">Consulter</button></td>
+      </tr>`).join('')
+  }</tbody></table>`;
+}
+async function viewConvMessages(id) {
+  const data = await api(`/api/admin/conversations/${id}/messages`);
+  const text = (data.messages || []).map(m => `[${m.created_at}] ${m.sender_name}: ${m.content || '(média)'}`).join('\n');
+  alert('Cette consultation est journalisée.\n\n' + (text || 'Aucun message.'));
+}
+async function loadAdminLog() {
+  const data = await api('/api/admin/access-log');
+  const el = document.getElementById('adminLog');
+  el.innerHTML = `<table><thead><tr><th>Admin</th><th>Action</th><th>Cible</th><th>Détail</th><th>Date</th></tr></thead><tbody>${
+    (data.log || []).map(l => `
+      <tr><td>${l.admin_name}</td><td>${l.action}</td><td>${l.target_name || '—'}</td><td>${l.detail || ''}</td><td>${new Date(l.created_at).toLocaleString('fr-FR')}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+loadConversations();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+setInterval(() => api('/api/users/heartbeat', 'POST'), 60000);
+</script>
+</body>
+</html>
