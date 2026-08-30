@@ -1,5 +1,9 @@
-const CACHE = 'melora-shell-v1';
-const SHELL = ['/app.html', '/login.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'melora-shell-v4';
+const SHELL = [
+  '/app.html', '/login.html', '/config.js', '/assets/js/idb-lite.js', '/assets/js/install-prompt.js',
+  '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
+  '/apple-touch-icon.png', '/apple-touch-icon-152.png', '/apple-touch-icon-167.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
@@ -13,23 +17,34 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Réseau d'abord pour l'API (toujours frais), cache pour le reste du shell.
+// Cache-first pour le shell (ouverture instantanée hors ligne) ; jamais pour /api/ (network-first
+// implicite : on ne met rien en cache côté SW pour l'API — la couche offline se fait via IndexedDB
+// dans app.html, qui sait fusionner proprement les données, ce qu'un simple cache HTTP ne sait pas faire).
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/')) return; // jamais mis en cache
+  if (url.pathname.startsWith('/api/')) return;
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    caches.match(event.request).then(cached => cached || fetch(event.request).then(res => {
+      // Met aussi en cache les pages/assets rencontrés en navigation (ex: icônes ajoutées plus tard).
+      if (res.ok && event.request.method === 'GET') {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(event.request, clone));
+      }
+      return res;
+    }).catch(() => cached))
   );
 });
 
-// Branché en phase suivante avec lib/push.js (VAPID) côté serveur.
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : { title: 'Melora', body: 'Nouveau message' };
+  if ('setAppBadge' in self.navigator && typeof data.count === 'number') {
+    self.navigator.setAppBadge(data.count).catch(() => {});
+  }
   event.waitUntil(
     self.registration.showNotification(data.title || 'Melora', {
       body: data.body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: data.icon || '/icon-192.png',
+      badge: data.badge || '/icon-192.png',
       data: { url: data.url || '/app.html' },
     })
   );
@@ -37,5 +52,17 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(self.clients.openWindow(event.notification.data?.url || '/app.html'));
+  const targetUrl = event.notification.data?.url || '/app.html';
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // Réutilise un onglet déjà ouvert plutôt que d'en empiler un nouveau, et le fait naviguer
+    // vers la bonne conversation (le clic sur une notif doit ouvrir CETTE conversation, pas l'accueil).
+    for (const client of allClients) {
+      if ('focus' in client) {
+        client.postMessage({ type: 'navigate', url: targetUrl });
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(targetUrl);
+  })());
 });

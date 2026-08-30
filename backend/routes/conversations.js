@@ -10,16 +10,21 @@ export async function handleConversations(req, res, urlPath) {
     if (!user) return;
 
     const rows = await db.prepare(`
-      SELECT c.id, c.type, c.name, c.avatar,
+      SELECT c.id, c.type,
+             CASE WHEN c.type = 'private' THEN peer.display_name ELSE c.name END AS name,
+             CASE WHEN c.type = 'private' THEN peer.avatar ELSE c.avatar END AS avatar,
+             CASE WHEN c.type = 'private' THEN peer.id ELSE NULL END AS peer_id,
              cm.last_read_message_id,
              (SELECT m.content FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
              (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message_at,
              (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.id > cm.last_read_message_id AND m.sender_id != ?) AS unread_count
       FROM conversations c
-      JOIN conversation_members cm ON cm.conversation_id = c.id
+      JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = ?
+      LEFT JOIN conversation_members pm ON pm.conversation_id = c.id AND pm.user_id != ? AND c.type = 'private'
+      LEFT JOIN users peer ON peer.id = pm.user_id
       WHERE cm.user_id = ?
       ORDER BY last_message_at DESC NULLS LAST
-    `).all(user.id, user.id);
+    `).all(user.id, user.id, user.id, user.id);
 
     return json(res, 200, { conversations: rows });
   }

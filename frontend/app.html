@@ -6,6 +6,16 @@
 <title>Melora</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0d0d0f">
+<!-- iOS ignore le manifest pour l'icône/le mode standalone : il faut ces balises en plus. -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Melora">
+<script src="/config.js"></script>
+<script src="/assets/js/idb-lite.js"></script>
+<script src="/assets/js/install-prompt.js" defer></script>
 <style>
   :root { --bg:#0d0d0f; --panel:#151517; --panel2:#1b1b1f; --border:#2a2a30; --text:#e8e6e1; --muted:#8b8a92; --accent:#d9822b; --bubble-me:#3a2a14; --green:#3ecf6e; --amber:#e0a53c; --red:#e05555; }
   * { box-sizing:border-box; }
@@ -51,6 +61,24 @@
   .tab-btn.active { color:var(--text); border-color:var(--accent); }
   .row-actions button { font-size:.72rem; padding:4px 8px; margin-right:4px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:6px; cursor:pointer; }
   .close-x { float:right; cursor:pointer; color:var(--muted); }
+  .call-btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:.95rem; }
+  #incomingCall { position:fixed; top:16px; right:16px; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; z-index:80; display:none; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  #incomingCall .who { font-weight:600; margin-bottom:2px; }
+  #incomingCall .sub { color:var(--muted); font-size:.82rem; margin-bottom:12px; }
+  #incomingCall .actions { display:flex; gap:10px; }
+  #incomingCall button { flex:1; border:none; border-radius:8px; padding:9px; cursor:pointer; font-weight:600; }
+  #incomingCall .accept { background:var(--green); color:#111; }
+  #incomingCall .decline { background:var(--red); color:#fff; }
+  #callOverlay { position:fixed; inset:0; background:#0a0a0c; z-index:90; display:none; flex-direction:column; align-items:center; justify-content:center; color:var(--text); }
+  #callOverlay video#remoteVideo { max-width:100%; max-height:70vh; border-radius:12px; background:#000; }
+  #callOverlay video#localVideo { position:absolute; bottom:110px; right:24px; width:140px; border-radius:10px; border:2px solid var(--border); background:#000; }
+  #callOverlay .call-status { font-size:1.1rem; margin:16px 0 6px; }
+  #callOverlay .call-name { font-size:1.4rem; font-family:Georgia,serif; }
+  #callOverlay .call-controls { position:absolute; bottom:30px; display:flex; gap:16px; }
+  #callOverlay .call-controls button { width:54px; height:54px; border-radius:50%; border:none; cursor:pointer; font-size:1.2rem; }
+  #callOverlay .end-btn { background:var(--red); color:#fff; }
+  #callOverlay .toggle-btn { background:var(--panel2); color:var(--text); }
+  #callOverlay .toggle-btn.off { background:var(--accent); color:#111; }
 </style>
 </head>
 <body>
@@ -61,7 +89,9 @@
     <div id="convList"></div>
     <div id="topbar">
       <span id="meName" style="font-size:.85rem;"></span>
-      <button class="btn" id="adminBtn" style="display:none;" onclick="openAdmin()">Administration</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="adminBtn" style="display:none;" onclick="openAdmin()">Administration</button>
+      </div>
     </div>
   </div>
   <div id="main">
@@ -70,8 +100,30 @@
     <div id="typingIndicator"></div>
     <div id="composer" style="display:none;">
       <input id="msgInput" placeholder="Écrire un message..." onkeydown="if(event.key==='Enter')sendMessage()" oninput="onTyping()">
+      <button id="micBtn" onclick="toggleVoiceRecording()" title="Note vocale">🎙️</button>
       <button onclick="sendMessage()">➤</button>
     </div>
+  </div>
+</div>
+
+<div id="incomingCall">
+  <div class="who" id="incomingCallName"></div>
+  <div class="sub" id="incomingCallMode"></div>
+  <div class="actions">
+    <button class="decline" onclick="declineIncomingCall()">Refuser</button>
+    <button class="accept" onclick="acceptIncomingCall()">Décrocher</button>
+  </div>
+</div>
+
+<div id="callOverlay">
+  <div class="call-name" id="callPeerName"></div>
+  <div class="call-status" id="callStatus">Appel en cours...</div>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <video id="localVideo" autoplay playsinline muted></video>
+  <div class="call-controls">
+    <button class="toggle-btn" id="muteBtn" onclick="toggleMute()">🎤</button>
+    <button class="toggle-btn" id="camBtn" onclick="toggleCamera()">📷</button>
+    <button class="end-btn" onclick="hangupCall()">📞</button>
   </div>
 </div>
 
@@ -106,7 +158,7 @@ if (localStorage.getItem('melora_must_change') === '1') {
 }
 
 async function api(path, method = 'GET', body) {
-  const res = await fetch(path, {
+  const res = await fetch(`${window.MELORA_API_BASE}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
@@ -116,16 +168,31 @@ async function api(path, method = 'GET', body) {
 }
 
 let activeConvId = null;
+let activeConvName = '';
+let activePeerId = null;
 let typingTimeout = null;
 
 async function loadConversations() {
+  // Rendu instantané depuis IndexedDB (marche hors-ligne / avant que le réseau ait répondu),
+  // puis on synchronise en tâche de fond avec le serveur et on met à jour le cache local.
+  const cached = await window.idbLite.getConversations();
+  if (cached.length) renderConversationList(cached);
+
+  if (!navigator.onLine) return;
   const data = await api('/api/conversations');
+  if (!data) return;
+  renderConversationList(data.conversations || []);
+  await window.idbLite.saveConversations(data.conversations || []);
+  updateBadge(data.conversations || []);
+}
+
+function renderConversationList(conversations) {
   const list = document.getElementById('convList');
   list.innerHTML = '';
-  (data.conversations || []).forEach(c => {
+  conversations.forEach(c => {
     const div = document.createElement('div');
     div.className = 'conv-item' + (c.id === activeConvId ? ' active' : '');
-    div.onclick = () => openConversation(c.id, c.name || 'Conversation');
+    div.onclick = () => openConversation(c.id, c.name || 'Conversation', c.peer_id || null);
     div.innerHTML = `
       <div class="avatar">${(c.name || '?')[0].toUpperCase()}</div>
       <div class="conv-meta">
@@ -136,24 +203,64 @@ async function loadConversations() {
   });
 }
 
-async function openConversation(id, name) {
+function updateBadge(conversations) {
+  const total = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+  if (!('setAppBadge' in navigator)) return;
+  if (total > 0) navigator.setAppBadge(total).catch(() => {});
+  else navigator.clearAppBadge().catch(() => {});
+}
+
+async function openConversation(id, name, peerId = null) {
   activeConvId = id;
-  document.getElementById('chatHeader').innerHTML = `<div class="avatar">${name[0].toUpperCase()}</div><strong>${name}</strong>`;
+  activeConvName = name;
+  if (peerId === null) {
+    const cached = await window.idbLite.getConversations();
+    peerId = cached.find(c => c.id === id)?.peer_id || null;
+  }
+  activePeerId = peerId;
+  document.getElementById('chatHeader').innerHTML = `
+    <div class="avatar">${name[0].toUpperCase()}</div><strong style="flex:1">${name}</strong>
+    ${peerId ? `
+      <button class="call-btn" onclick="startCall('audio')" title="Appel audio">📞</button>
+      <button class="call-btn" onclick="startCall('video')" title="Appel vidéo">🎥</button>
+    ` : ''}`;
+  document.getElementById('chatHeader').style.display = 'flex';
+  document.getElementById('chatHeader').style.alignItems = 'center';
+  document.getElementById('chatHeader').style.gap = '10px';
   document.getElementById('composer').style.display = 'flex';
+
+  // Instantané depuis le cache local, avant même que la requête réseau parte.
+  const cachedMsgs = await window.idbLite.getMessages(id);
+  if (cachedMsgs.length) renderMessages(cachedMsgs);
+
+  if (!navigator.onLine) return; // reste sur le cache tant qu'on n'a pas de réseau
   const data = await api(`/api/conversations/${id}/messages`);
+  if (!data) return;
   renderMessages(data.messages || []);
+  await window.idbLite.saveMessages(id, data.messages || []);
   loadConversations();
   const last = (data.messages || []).at(-1);
   if (last) api(`/api/conversations/${id}/read`, 'PUT', { up_to_message_id: last.id });
+}
+
+function tickIcon(m) {
+  if (m.status === 'pending') return '🕓';
+  if (m.read) return '<span style="color:#5bb8ff">✓✓</span>';
+  if (m.delivered) return '✓✓';
+  return '✓';
 }
 
 function renderMessages(msgs) {
   const box = document.getElementById('messages');
   box.innerHTML = '';
   msgs.forEach(m => {
+    const mine = m.sender_id === me.id;
     const div = document.createElement('div');
-    div.className = 'msg ' + (m.sender_id === me.id ? 'me' : 'them');
-    div.innerHTML = `${escapeHtml(m.content || '')}<div class="meta">${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>`;
+    div.className = 'msg ' + (mine ? 'me' : 'them');
+    const body = m.type === 'voice'
+      ? `<audio controls src="${m.content}" style="max-width:220px;height:32px;"></audio>`
+      : escapeHtml(m.content || '');
+    div.innerHTML = `${body}<div class="meta">${new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${mine ? ' ' + tickIcon(m) : ''}</div>`;
     box.appendChild(div);
   });
   box.scrollTop = box.scrollHeight;
@@ -165,25 +272,73 @@ async function sendMessage() {
   const content = input.value.trim();
   if (!content || !activeConvId) return;
   input.value = '';
-  const clientId = crypto.randomUUID();
-  await api(`/api/conversations/${activeConvId}/messages`, 'POST', { client_message_id: clientId, type: 'text', content });
-  const data = await api(`/api/conversations/${activeConvId}/messages`);
-  renderMessages(data.messages || []);
+  await sendMessagePayload({ type: 'text', content });
 }
 
+// Envoi générique (texte ou vocal) — gère la file d'attente hors-ligne.
+async function sendMessagePayload(payload) {
+  const clientId = crypto.randomUUID();
+  const optimistic = {
+    client_message_id: clientId, conversation_id: activeConvId, sender_id: me.id,
+    ...payload, created_at: new Date().toISOString(), status: 'pending',
+  };
+  await window.idbLite.saveMessages(activeConvId, [optimistic]);
+  renderMessages(await window.idbLite.getMessages(activeConvId));
+
+  if (!navigator.onLine) {
+    await window.idbLite.queuePending({ client_message_id: clientId, conversation_id: activeConvId, ...payload });
+    return;
+  }
+  await trySend(clientId, activeConvId, payload);
+}
+
+async function trySend(clientId, convId, payload) {
+  try {
+    const res = await api(`/api/conversations/${convId}/messages`, 'POST', { client_message_id: clientId, ...payload });
+    if (!res || res.error) throw new Error(res?.error || 'echec');
+    await window.idbLite.saveMessages(convId, [{ ...res.message, status: 'sent' }]);
+    if (convId === activeConvId) renderMessages(await window.idbLite.getMessages(convId));
+    loadConversations();
+  } catch {
+    // Réseau instable malgré navigator.onLine=true (faux positif fréquent) -> on met en file.
+    await window.idbLite.queuePending({ client_message_id: clientId, conversation_id: convId, ...payload });
+  }
+}
+
+// Rejoue tous les messages en attente dès que la connexion revient — sans jamais dupliquer
+// (même client_message_id qu'à la création, donc le serveur dédoublonne si un envoi a déjà réussi).
+async function flushPendingMessages() {
+  const pending = await window.idbLite.getPending();
+  for (const p of pending) {
+    const { client_message_id, conversation_id, ...payload } = p;
+    await trySend(client_message_id, conversation_id, payload);
+    await window.idbLite.removePending(client_message_id);
+  }
+}
+window.addEventListener('online', flushPendingMessages);
+
 function onTyping() {
-  if (!activeConvId) return;
+  if (!activeConvId || !navigator.onLine) return;
   api(`/api/conversations/${activeConvId}/typing`, 'POST', { typing: true });
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => api(`/api/conversations/${activeConvId}/typing`, 'POST', { typing: false }), 2000);
 }
 
 // --- Temps réel ---
-const es = new EventSource(`/api/stream?token=${encodeURIComponent(token)}`);
-es.addEventListener('message.new', (e) => {
+const es = new EventSource(`${window.MELORA_API_BASE}/api/stream?token=${encodeURIComponent(token)}`);
+es.addEventListener('message.new', async (e) => {
   const data = JSON.parse(e.data);
-  if (data.conversation_id === activeConvId) openConversation(activeConvId, document.querySelector('#chatHeader strong')?.textContent || '');
+  await window.idbLite.saveMessages(data.conversation_id, [{ ...data.message, status: 'sent' }]);
+  // Accusé "livré" dès réception SSE — avant même que l'utilisateur ait ouvert la conversation.
+  if (data.message.sender_id !== me.id) {
+    api(`/api/conversations/${data.conversation_id}/delivered`, 'PUT', { up_to_message_id: data.message.id });
+  }
+  if (data.conversation_id === activeConvId) openConversation(activeConvId, activeConvName);
   else loadConversations();
+});
+es.addEventListener('message.delivered', (e) => {
+  const data = JSON.parse(e.data);
+  if (data.conversation_id === activeConvId) openConversation(activeConvId, activeConvName);
 });
 es.addEventListener('typing.update', (e) => {
   const data = JSON.parse(e.data);
@@ -208,7 +363,7 @@ document.getElementById('search').addEventListener('input', async (e) => {
     div.className = 'conv-item';
     div.onclick = async () => {
       const r = await api('/api/conversations', 'POST', { peer_id: u.id });
-      openConversation(r.conversation.id, u.display_name);
+      openConversation(r.conversation.id, u.display_name, u.id);
       document.getElementById('search').value = '';
       loadConversations();
     };
@@ -291,8 +446,245 @@ async function loadAdminLog() {
 }
 
 loadConversations();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(subscribeToPush);
 setInterval(() => api('/api/users/heartbeat', 'POST'), 60000);
+
+// --- Push notifications : reçoit un message même onglet fermé / service en veille ---
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - base64.length % 4) % 4);
+  const base64safe = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64safe);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+async function subscribeToPush(registration) {
+  try {
+    if (!('PushManager' in window)) return; // navigateur sans support (ex: certains iOS non installés)
+    const { enabled, public_key } = await api('/api/push/vapid-public-key');
+    if (!enabled) return; // pas de clés VAPID configurées côté serveur — SSE seul suffit
+    const already = await registration.pushManager.getSubscription();
+    if (already) return api('/api/push/subscribe', 'POST', { subscription: already.toJSON() });
+    if (Notification.permission === 'denied') return;
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key),
+    });
+    await api('/api/push/subscribe', 'POST', { subscription: subscription.toJSON() });
+  } catch (err) {
+    console.warn('Push notifications indisponibles:', err);
+  }
+}
+
+// Installation PWA gérée par assets/js/install-prompt.js (universel Android/iOS/desktop).
+
+// --- Notes vocales (MediaRecorder -> base64 -> Turso, pas de S3/Cloudinary sur le plan gratuit) ---
+let mediaRecorder = null;
+let recordedChunks = [];
+async function toggleVoiceRecording() {
+  if (!activeConvId) return;
+  const btn = document.getElementById('micBtn');
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      btn.textContent = '🎙️';
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      if (blob.size > 350_000) return alert('Note vocale trop longue (30s max) — réessaie plus court.');
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await sendMessagePayload({ type: 'voice', content: base64 });
+    };
+    mediaRecorder.start();
+    btn.textContent = '⏹️';
+  } catch {
+    alert("Impossible d'accéder au micro (permission refusée ?).");
+  }
+}
+
+// --- Deep-link : clic sur une notification -> ouvre directement la bonne conversation ---
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'navigate') openConversationFromUrl(e.data.url);
+});
+function openConversationFromUrl(url) {
+  const convId = Number(new URL(url, location.origin).searchParams.get('conversation'));
+  if (convId) openConversation(convId, 'Conversation');
+}
+const initialConvId = new URLSearchParams(location.search).get('conversation');
+if (initialConvId) openConversationFromUrl(location.href);
+
+// L'utilisateur revient sur l'app -> les notifs qu'il vient de voir ne comptent plus dans le badge.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && 'clearAppBadge' in navigator) {
+    navigator.clearAppBadge().catch(() => {});
+  }
+});
+
+// ============================================================
+// APPELS AUDIO/VIDÉO — WebRTC natif (RTCPeerConnection), pas de simple-peer :
+// une seule dépendance à éviter de plus, et l'API native suffit largement ici.
+// Signaling entièrement relayé via le canal SSE déjà ouvert + les routes /api/calls/*.
+// ============================================================
+let activeCall = null;      // { callId, peerId, mode, pc, localStream, isCaller }
+let incomingCall = null;    // appel entrant en attente de décision (accept/decline)
+
+async function getIceServers() {
+  try {
+    const data = await api('/api/calls/ice-servers');
+    return data?.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }];
+  } catch {
+    return [{ urls: 'stun:stun.l.google.com:19302' }]; // dégrade sans bloquer l'appel
+  }
+}
+
+function buildPeerConnection(iceServers, callId, otherId) {
+  const pc = new RTCPeerConnection({ iceServers });
+  pc.onicecandidate = (e) => {
+    if (e.candidate) api(`/api/calls/${callId}/signal`, 'POST', { signal_type: 'ice-candidate', payload: e.candidate });
+  };
+  pc.ontrack = (e) => {
+    const remote = document.getElementById('remoteVideo');
+    if (remote.srcObject !== e.streams[0]) remote.srcObject = e.streams[0];
+  };
+  pc.onconnectionstatechange = () => {
+    if (['disconnected', 'failed', 'closed'].includes(pc.connectionState) && activeCall?.callId === callId) {
+      document.getElementById('callStatus').textContent = 'Connexion perdue...';
+    }
+  };
+  return pc;
+}
+
+async function startCall(mode) {
+  if (!activePeerId || !activeConvId || activeCall) return;
+  const iceServers = await getIceServers();
+  const res = await api('/api/calls/invite', 'POST', { conversation_id: activeConvId, mode });
+  if (!res || res.error) return alert(res?.error || "Impossible de démarrer l'appel.");
+  if (res.warning) return alert(res.warning); // correspondant hors ligne, push envoyé
+
+  const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: mode === 'video' });
+  const pc = buildPeerConnection(iceServers, res.call_id, activePeerId);
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  activeCall = { callId: res.call_id, peerId: activePeerId, mode, pc, localStream, isCaller: true };
+  showCallOverlay(activeConvName, mode, 'Appel en cours...');
+  // L'offre SDP n'est envoyée qu'une fois l'appelé décroché (voir 'call.accepted' ci-dessous) —
+  // pas la peine de négocier avant que quelqu'un ait dit oui.
+}
+
+es.addEventListener('call.invite', (e) => {
+  const data = JSON.parse(e.data);
+  if (activeCall || incomingCall) {
+    // Déjà en ligne -> on refuse poliment plutôt que de laisser sonner sans réponse possible.
+    return api(`/api/calls/${data.call_id}/decline`, 'POST', {});
+  }
+  incomingCall = data;
+  document.getElementById('incomingCallName').textContent = data.from.display_name;
+  document.getElementById('incomingCallMode').textContent = data.mode === 'video' ? 'Appel vidéo entrant' : 'Appel audio entrant';
+  document.getElementById('incomingCall').style.display = 'block';
+});
+
+async function acceptIncomingCall() {
+  if (!incomingCall) return;
+  const { call_id, mode, from } = incomingCall;
+  document.getElementById('incomingCall').style.display = 'none';
+  incomingCall = null;
+
+  const iceServers = await getIceServers();
+  const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: mode === 'video' });
+  const pc = buildPeerConnection(iceServers, call_id, from.id);
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  activeCall = { callId: call_id, peerId: from.id, mode, pc, localStream, isCaller: false };
+  showCallOverlay(from.display_name, mode, 'Connexion...');
+  await api(`/api/calls/${call_id}/accept`, 'POST', {});
+  // On attend maintenant l'offre SDP du côté appelant (événement 'call.signal' ci-dessous).
+}
+
+function declineIncomingCall() {
+  if (!incomingCall) return;
+  api(`/api/calls/${incomingCall.call_id}/decline`, 'POST', {});
+  document.getElementById('incomingCall').style.display = 'none';
+  incomingCall = null;
+}
+
+// L'appelant crée et envoie son offre seulement une fois que l'appelé a décroché.
+es.addEventListener('call.accepted', async (e) => {
+  const data = JSON.parse(e.data);
+  if (!activeCall || activeCall.callId !== data.call_id || !activeCall.isCaller) return;
+  document.getElementById('callStatus').textContent = 'Connexion...';
+  const offer = await activeCall.pc.createOffer();
+  await activeCall.pc.setLocalDescription(offer);
+  api(`/api/calls/${data.call_id}/signal`, 'POST', { signal_type: 'offer', payload: offer });
+});
+
+es.addEventListener('call.signal', async (e) => {
+  const { call_id, signal_type, payload } = JSON.parse(e.data);
+  if (!activeCall || activeCall.callId !== call_id) return;
+  const pc = activeCall.pc;
+  if (signal_type === 'offer') {
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    api(`/api/calls/${call_id}/signal`, 'POST', { signal_type: 'answer', payload: answer });
+  } else if (signal_type === 'answer') {
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+    document.getElementById('callStatus').textContent = 'En communication';
+  } else if (signal_type === 'ice-candidate') {
+    try { await pc.addIceCandidate(new RTCIceCandidate(payload)); } catch { /* candidat obsolète, sans gravité */ }
+  }
+});
+
+es.addEventListener('call.declined', () => { alert('Appel refusé.'); cleanupCall(); });
+es.addEventListener('call.ended', () => cleanupCall());
+
+function showCallOverlay(name, mode, status) {
+  document.getElementById('callPeerName').textContent = name;
+  document.getElementById('callStatus').textContent = status;
+  document.getElementById('localVideo').srcObject = activeCall.localStream;
+  document.getElementById('localVideo').style.display = mode === 'video' ? 'block' : 'none';
+  document.getElementById('remoteVideo').style.display = mode === 'video' ? 'block' : 'none';
+  document.getElementById('callOverlay').style.display = 'flex';
+}
+
+function hangupCall() {
+  if (activeCall) api(`/api/calls/${activeCall.callId}/end`, 'POST', {});
+  cleanupCall();
+}
+
+function cleanupCall() {
+  if (activeCall) {
+    activeCall.pc.close();
+    activeCall.localStream.getTracks().forEach(t => t.stop());
+  }
+  activeCall = null;
+  document.getElementById('callOverlay').style.display = 'none';
+  document.getElementById('remoteVideo').srcObject = null;
+  document.getElementById('localVideo').srcObject = null;
+}
+
+function toggleMute() {
+  if (!activeCall) return;
+  const track = activeCall.localStream.getAudioTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById('muteBtn').classList.toggle('off', !track.enabled);
+}
+function toggleCamera() {
+  if (!activeCall || activeCall.mode !== 'video') return;
+  const track = activeCall.localStream.getVideoTracks()[0];
+  track.enabled = !track.enabled;
+  document.getElementById('camBtn').classList.toggle('off', !track.enabled);
+}
 </script>
 </body>
 </html>

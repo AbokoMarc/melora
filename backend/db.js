@@ -124,6 +124,15 @@ await db.exec(`
     PRIMARY KEY (message_id, user_id)
   );
 
+  -- Distinct de message_reads : "livré" (arrivé sur l'appareil) vs "lu" (vu à l'écran) —
+  -- même distinction que la double coche grise/bleue de WhatsApp.
+  CREATE TABLE IF NOT EXISTS message_deliveries (
+    message_id INTEGER NOT NULL REFERENCES messages(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    delivered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (message_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS push_subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
