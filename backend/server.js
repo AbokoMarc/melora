@@ -66,7 +66,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (urlPath === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     return res.end(JSON.stringify({ ok: true }));
   }
 
@@ -75,7 +75,7 @@ const server = http.createServer(async (req, res) => {
     const token = urlObj.searchParams.get('token');
     const fakeReq = { headers: { authorization: `Bearer ${token}` } };
     const user = getAuthUser(fakeReq);
-    if (!user) { res.writeHead(401); return res.end(); }
+    if (!user) { res.writeHead(401, { 'Access-Control-Allow-Origin': '*' }); return res.end(); }
     return sseHandler(req, res, user);
   }
 
@@ -90,12 +90,12 @@ const server = http.createServer(async (req, res) => {
       if (result !== null && result !== undefined) return;
       if (res.writableEnded || res.headersSent) return;
     }
-    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Route API introuvable.' }));
   } catch (err) {
     console.error('Erreur serveur:', err);
     if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'Erreur interne du serveur.' }));
     }
   }

@@ -1,4 +1,4 @@
-const CACHE = 'melora-shell-v4';
+const CACHE = 'melora-shell-v5';
 const SHELL = [
   '/app.html', '/login.html', '/config.js', '/assets/js/idb-lite.js', '/assets/js/install-prompt.js',
   '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',
@@ -23,8 +23,15 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith('/api/')) return;
+  // Les requêtes de navigation arrivent ici avec request.redirect = 'manual' (comportement
+  // imposé par le navigateur, pas un choix de ce code) : si le serveur répond par une
+  // redirection (fréquent sur Vercel), le fetch renvoie une réponse "opaqueredirect" que le
+  // navigateur refuse d'utiliser pour afficher une page -> "a redirected response was used
+  // for a request whose redirect mode is not follow". On reconstruit donc la requête avec
+  // redirect: 'follow' explicite avant de la relayer.
+  const fetchRequest = new Request(event.request, { redirect: 'follow' });
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(res => {
+    caches.match(event.request).then(cached => cached || fetch(fetchRequest).then(res => {
       // Met aussi en cache les pages/assets rencontrés en navigation (ex: icônes ajoutées plus tard).
       if (res.ok && event.request.method === 'GET') {
         const clone = res.clone();

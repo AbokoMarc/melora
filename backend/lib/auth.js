@@ -63,7 +63,7 @@ export function getAuthUser(req) {
 export function requireAuth(req, res) {
   const user = getAuthUser(req);
   if (!user) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.writeHead(401, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Non authentifié.' }));
     return null;
   }
@@ -77,7 +77,7 @@ export async function requireActiveUser(req, res) {
   if (!user) return null;
   const row = await db.prepare('SELECT id, role, status FROM users WHERE id = ?').get(user.id);
   if (!row || row.status === 'suspended') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Compte suspendu.', code: 'SUSPENDED' }));
     return null;
   }
@@ -88,7 +88,7 @@ export async function requireAdmin(req, res) {
   const user = await requireActiveUser(req, res);
   if (!user) return null;
   if (user.role !== 'admin' && user.role !== 'super_admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Accès réservé aux administrateurs.' }));
     return null;
   }
@@ -99,7 +99,7 @@ export async function requireSuperAdmin(req, res) {
   const user = await requireActiveUser(req, res);
   if (!user) return null;
   if (user.role !== 'super_admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({ error: 'Accès réservé au super administrateur.' }));
     return null;
   }
