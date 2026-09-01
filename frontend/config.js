@@ -5,4 +5,4 @@
 // En local (node server.js sert tout depuis http://localhost:4000), on laisse vide :
 // une chaîne vide dans les templates `${API_BASE}/api/...` donne des chemins relatifs,
 // qui pointent alors correctement vers le même serveur qui a servi la page.
-window.MELORA_API_BASE = ''; // ex: 'https://melora-backend.onrender.com' une fois déployé
+window.MELORA_API_BASE = 'https://melora-lzed.onrender.com';
