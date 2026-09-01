@@ -1,4 +1,4 @@
-const CACHE = 'melora-shell-v5';
+const CACHE = 'melora-shell-v7';
 const SHELL = [
   '/app.html', '/login.html', '/config.js', '/assets/js/idb-lite.js', '/assets/js/install-prompt.js',
   '/manifest.webmanifest', '/icon-192.png', '/icon-512.png',

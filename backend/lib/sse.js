@@ -1,7 +1,7 @@
 // Hub temps réel — Server-Sent Events (natif, aucune dépendance), même mécanisme que Roomia.
 // Choisi plutôt que WebSocket : sur un process unique / free tier, WebSocket n'apporte aucun
 // avantage réel ici (voir échange précédent) et coûte plus de code à maintenir en solo.
-import { findActiveCallsFor, endCall } from './calls.js';
+import { findActiveCallsFor, finishCall } from './calls.js';
 
 const clients = new Map(); // userId -> Set(res)
 
@@ -36,7 +36,7 @@ export function sseHandler(req, res, user) {
       // quelqu'un dont la connexion vient de tomber (perte réseau, onglet fermé, etc).
       for (const { callId, callerId, calleeId } of findActiveCallsFor(user.id)) {
         const otherId = user.id === callerId ? calleeId : callerId;
-        endCall(callId);
+        finishCall(callId).catch(() => {});
         send(otherId, 'call.ended', { call_id: callId, reason: 'disconnected' });
       }
     }

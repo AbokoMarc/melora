@@ -16,6 +16,7 @@ import { handleMessages } from './routes/messages.js';
 import { handleAdmin } from './routes/admin.js';
 import { handlePush } from './routes/push.js';
 import { handleCalls } from './routes/calls.js';
+import { handleStatuses } from './routes/statuses.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4000;
@@ -84,7 +85,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    const handlers = [handleAuth, handleUsers, handleConversations, handleMessages, handleAdmin, handlePush, handleCalls];
+    const handlers = [handleAuth, handleUsers, handleConversations, handleMessages, handleAdmin, handlePush, handleCalls, handleStatuses];
     for (const handler of handlers) {
       const result = await handler(req, res, urlPath, urlObj);
       if (result !== null && result !== undefined) return;

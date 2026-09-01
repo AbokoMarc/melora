@@ -2,11 +2,10 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Melora</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0d0d0f">
-<!-- iOS ignore le manifest pour l'icône/le mode standalone : il faut ces balises en plus. -->
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png">
 <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167.png">
@@ -14,45 +13,150 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Melora">
+<script>
+  // Applique le thème AVANT le premier rendu, pour éviter le flash blanc/sombre au chargement.
+  (function () {
+    var t = localStorage.getItem('melora_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <script src="/config.js"></script>
 <script src="/assets/js/idb-lite.js"></script>
 <script src="/assets/js/install-prompt.js" defer></script>
 <style>
-  :root { --bg:#0d0d0f; --panel:#151517; --panel2:#1b1b1f; --border:#2a2a30; --text:#e8e6e1; --muted:#8b8a92; --accent:#d9822b; --bubble-me:#3a2a14; --green:#3ecf6e; --amber:#e0a53c; --red:#e05555; }
+  :root, :root[data-theme="dark"] {
+    --bg:#0d0d0f; --panel:#17171b; --panel2:#1e1e23; --border:#2a2a30;
+    --text:#e8e6e1; --muted:#8b8a92; --accent:#d9822b; --accent-text:#111;
+    --bubble-me:#3a2a17; --bubble-them:#1e1e23;
+    --green:#3ecf6a; --amber:#e0a94a; --red:#e05a4a; --blue-tick:#5bb8ff;
+  }
+  :root[data-theme="light"] {
+    --bg:#faf8f4; --panel:#ffffff; --panel2:#eef2f8; --border:#dde2ea;
+    --text:#1c1c1e; --muted:#6b6f76; --accent:#c9711f; --accent-text:#fff;
+    --bubble-me:#dbe9fb; --bubble-them:#f0f3f8;
+    --green:#2a9d55; --amber:#b97a1c; --red:#c0392b; --blue-tick:#2b7fd9;
+  }
   * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
-  #app { display:flex; height:100vh; }
-  #sidebar { width:300px; border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
-  #sidebar.hidden-mobile { display:none; }
-  .brand { display:flex; align-items:center; gap:10px; padding:16px; font-family:Georgia,serif; font-size:1.2rem; }
-  .brand .badge { width:28px; height:28px; border-radius:7px; background:var(--accent); color:#111; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.9rem; }
-  #search { margin:0 14px 12px; padding:9px 12px; background:#0f0f12; border:1px solid var(--border); border-radius:8px; color:var(--text); width:calc(100% - 28px); }
-  #convList { flex:1; overflow-y:auto; }
-  .conv-item { display:flex; gap:10px; padding:10px 14px; cursor:pointer; border-left:3px solid transparent; }
-  .conv-item:hover { background:var(--panel2); }
-  .conv-item.active { background:var(--panel2); border-left-color:var(--accent); }
-  .avatar { width:38px; height:38px; border-radius:50%; background:#3a3540; display:flex; align-items:center; justify-content:center; font-size:.8rem; font-weight:600; flex-shrink:0; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  input, textarea, button { font-family:inherit; }
+  #app { display:flex; height:100dvh; overflow:hidden; }
+
+  /* --- Rail (nav desktop) --- */
+  #rail { width:64px; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:14px 0; flex-shrink:0; }
+  #rail .brand-badge { width:34px; height:34px; border-radius:9px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center; justify-content:center; font-family:Georgia,serif; font-weight:700; margin-bottom:18px; }
+  .rail-btn { width:44px; height:44px; border-radius:10px; background:none; border:none; color:var(--muted); font-size:1.25rem; cursor:pointer; margin-bottom:6px; }
+  .rail-btn.active { background:var(--panel2); color:var(--text); }
+  #rail .rail-spacer { flex:1; }
+
+  /* --- Liste (conversations / statuts / appels / paramètres) --- */
+  #listPane { width:340px; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden; }
+  .pane-header { font-family:Georgia,serif; font-size:1.15rem; padding:16px 16px 8px; }
+  #search { margin:0 16px 8px; padding:9px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; color:var(--text); }
+  .filter-chips { display:flex; gap:8px; padding:0 16px 10px; }
+  .chip { background:var(--panel2); border:1px solid var(--border); color:var(--muted); border-radius:999px; padding:6px 14px; font-size:.8rem; cursor:pointer; }
+  .chip.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent); font-weight:600; }
+  .scroll-list { flex:1; overflow-y:auto; }
+
+  .conv-item { display:flex; gap:10px; padding:10px 16px; cursor:pointer; align-items:center; }
+  .conv-item:hover, .conv-item.active { background:var(--panel2); }
+  .avatar { width:42px; height:42px; border-radius:50%; background:var(--accent); color:var(--accent-text); display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
   .conv-meta { flex:1; min-width:0; }
-  .conv-name { font-weight:600; font-size:.9rem; display:flex; justify-content:space-between; }
-  .conv-preview { color:var(--muted); font-size:.8rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .unread { background:var(--accent); color:#111; border-radius:10px; padding:1px 7px; font-size:.72rem; font-weight:700; }
+  .conv-name { display:flex; justify-content:space-between; font-weight:600; font-size:.92rem; }
+  .conv-name span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .unread { background:var(--accent); color:var(--accent-text); font-size:.7rem; font-weight:700; border-radius:999px; padding:1px 7px; }
+  .conv-preview { color:var(--muted); font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .empty-hint { color:var(--muted); font-size:.85rem; padding:24px 16px; text-align:center; }
+
+  #topbar { border-top:1px solid var(--border); padding:10px 16px; display:flex; justify-content:space-between; align-items:center; }
+
+  /* --- Statuts --- */
+  .status-add-row { display:flex; gap:10px; align-items:center; padding:8px 16px 14px; cursor:pointer; }
+  .status-add-row .avatar { position:relative; }
+  .status-add-row .plus { position:absolute; bottom:-2px; right:-2px; width:16px; height:16px; border-radius:50%; background:var(--accent); color:var(--accent-text); font-size:.7rem; display:flex; align-items:center; justify-content:center; }
+  .status-item { display:flex; gap:10px; padding:9px 16px; cursor:pointer; align-items:center; }
+  .status-item:hover { background:var(--panel2); }
+  .status-ring { width:44px; height:44px; border-radius:50%; padding:2px; border:2px solid var(--accent); flex-shrink:0; }
+  .status-ring.seen { border-color:var(--border); }
+  .status-ring .avatar { width:100%; height:100%; }
+  .status-time { color:var(--muted); font-size:.78rem; }
+  #statusOverlay { position:fixed; inset:0; background:#000; z-index:95; display:none; flex-direction:column; align-items:center; justify-content:center; }
+  #statusOverlay .status-card { width:min(92vw,420px); height:min(70vh,600px); border-radius:14px; display:flex; align-items:center; justify-content:center; padding:30px; text-align:center; font-size:1.4rem; font-family:Georgia,serif; color:#fff; }
+  #statusOverlay .status-top { position:absolute; top:24px; left:24px; right:24px; display:flex; gap:10px; align-items:center; color:#fff; }
+  #statusOverlay .close-x { position:absolute; top:20px; right:20px; color:#fff; font-size:1.6rem; cursor:pointer; }
+  #statusComposer { position:fixed; inset:0; background:var(--bg); z-index:95; display:none; flex-direction:column; padding:20px; }
+  #statusComposer textarea { flex:1; background:none; border:none; color:#fff; font-size:1.6rem; font-family:Georgia,serif; text-align:center; resize:none; outline:none; }
+  #statusComposer .swatches { display:flex; gap:10px; justify-content:center; padding:14px 0; }
+  #statusComposer .swatch { width:28px; height:28px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
+  #statusComposer .swatch.active { border-color:#fff; }
+
+  /* --- Appels --- */
+  .call-item { display:flex; gap:10px; padding:10px 16px; align-items:center; cursor:default; }
+  .call-item:hover { background:var(--panel2); }
+  .call-line { display:flex; align-items:center; gap:6px; font-size:.82rem; }
+  .call-dir { font-size:.9rem; }
+  .call-dir.missed { color:var(--red); }
+  .call-dir.in { color:var(--green); }
+  .call-quickbtn { margin-left:auto; background:none; border:none; color:var(--accent); font-size:1.1rem; cursor:pointer; }
+
+  /* --- Paramètres --- */
+  #paneSettings { padding:16px; overflow-y:auto; }
+  .settings-avatar { width:72px; height:72px; border-radius:50%; background:var(--accent); color:var(--accent-text); display:flex; align-items:center; justify-content:center; font-size:1.6rem; font-weight:700; margin:0 auto 14px; }
+  .settings-field { margin-bottom:14px; }
+  .settings-field label { display:block; font-size:.78rem; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.02em; }
+  .settings-field input, .settings-field textarea { width:100%; padding:9px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; color:var(--text); }
+  .settings-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid var(--border); }
+  .theme-switch { display:flex; background:var(--panel2); border-radius:999px; padding:3px; gap:2px; }
+  .theme-switch button { border:none; background:none; color:var(--muted); padding:6px 12px; border-radius:999px; font-size:.82rem; cursor:pointer; }
+  .theme-switch button.active { background:var(--accent); color:var(--accent-text); }
+  .btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 14px; cursor:pointer; font-size:.85rem; }
+  .btn.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent); font-weight:600; }
+  .btn.danger { color:var(--red); }
+  .btn.block { width:100%; margin-top:8px; }
+
+  /* --- Zone de discussion --- */
   #main { flex:1; display:flex; flex-direction:column; min-width:0; }
-  #chatHeader { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
-  #messages { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; }
-  .msg { max-width:60%; padding:9px 13px; border-radius:12px; font-size:.9rem; line-height:1.4; }
-  .msg.them { background:var(--panel2); align-self:flex-start; }
-  .msg.me { background:var(--bubble-me); align-self:flex-end; }
-  .msg .meta { font-size:.68rem; color:var(--muted); margin-top:4px; text-align:right; }
-  #composer { display:flex; gap:10px; padding:14px; border-top:1px solid var(--border); }
-  #composer input { flex:1; padding:11px 14px; background:#0f0f12; border:1px solid var(--border); border-radius:20px; color:var(--text); }
-  #composer button { background:var(--accent); border:none; border-radius:50%; width:42px; height:42px; cursor:pointer; font-size:1.1rem; }
-  #typingIndicator { padding:0 18px; color:var(--muted); font-size:.78rem; font-style:italic; height:16px; }
-  .empty-state { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); }
-  #topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); }
-  #topbar .btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:8px; cursor:pointer; font-size:.82rem; }
-  #adminModal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:50; }
-  #adminModal .box { background:var(--panel); width:min(720px, 92vw); max-height:85vh; overflow-y:auto; border-radius:12px; border:1px solid var(--border); padding:20px; }
-  #adminModal h2 { margin-top:0; }
+  #chatHeader { display:none; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+  #backBtn { display:none; background:none; border:none; color:var(--text); font-size:1.3rem; cursor:pointer; padding:0 4px; }
+  #chatPlaceholder { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); text-align:center; padding:20px; }
+  #messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:70%; padding:9px 12px; border-radius:12px; font-size:.92rem; word-wrap:break-word; }
+  .msg.me { align-self:flex-end; background:var(--bubble-me); border-bottom-right-radius:3px; }
+  .msg.them { align-self:flex-start; background:var(--bubble-them); border-bottom-left-radius:3px; }
+  .msg .meta { font-size:.7rem; color:var(--muted); margin-top:3px; text-align:right; }
+  #typingIndicator { padding:0 16px 6px; color:var(--muted); font-size:.8rem; font-style:italic; min-height:1.1em; }
+  #composer { display:none; padding:12px 16px; gap:10px; border-top:1px solid var(--border); align-items:center; }
+  #composer input { flex:1; padding:10px 14px; background:var(--panel2); border:1px solid var(--border); border-radius:20px; color:var(--text); }
+  #composer button { background:var(--accent); color:var(--accent-text); border:none; width:38px; height:38px; border-radius:50%; cursor:pointer; font-size:1rem; flex-shrink:0; }
+  #micBtn { background:var(--panel2) !important; color:var(--text) !important; }
+
+  .close-x { float:right; cursor:pointer; color:var(--muted); }
+  .call-btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:.95rem; }
+  #incomingCall { position:fixed; top:16px; right:16px; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; z-index:80; display:none; box-shadow:0 8px 24px rgba(0,0,0,.4); max-width:calc(100vw - 32px); }
+  #incomingCall .who { font-weight:600; margin-bottom:2px; }
+  #incomingCall .sub { color:var(--muted); font-size:.82rem; margin-bottom:12px; }
+  #incomingCall .actions { display:flex; gap:10px; }
+  #incomingCall button { flex:1; border:none; border-radius:8px; padding:9px; cursor:pointer; font-weight:600; }
+  #incomingCall .accept { background:var(--green); color:#111; }
+  #incomingCall .decline { background:var(--red); color:#fff; }
+  #callOverlay { position:fixed; inset:0; background:#0a0a0c; z-index:90; display:none; flex-direction:column; align-items:center; justify-content:center; color:#fff; }
+  #callOverlay video#remoteVideo { max-width:100%; max-height:70vh; border-radius:12px; background:#000; }
+  #callOverlay video#localVideo { position:absolute; bottom:110px; right:24px; width:120px; border-radius:10px; border:2px solid var(--border); background:#000; }
+  #callOverlay .call-status { font-size:1.1rem; margin:16px 0 6px; }
+  #callOverlay .call-name { font-size:1.4rem; font-family:Georgia,serif; }
+  #callOverlay .call-controls { position:absolute; bottom:30px; display:flex; gap:16px; }
+  #callOverlay .call-controls button { width:54px; height:54px; border-radius:50%; border:none; cursor:pointer; font-size:1.2rem; }
+  #callOverlay .end-btn { background:var(--red); color:#fff; }
+  #callOverlay .toggle-btn { background:var(--panel2); color:var(--text); }
+  #callOverlay .toggle-btn.off { background:var(--accent); color:var(--accent-text); }
+
+  #adminModal { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:85; display:none; align-items:center; justify-content:center; padding:20px; }
+  #adminModal .box { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px; width:min(680px,100%); max-height:85vh; overflow-y:auto; }
+  .admin-tabs { display:flex; gap:8px; margin:12px 0; }
+  .admin-tabs button { background:var(--panel2); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:8px; cursor:pointer; font-size:.82rem; }
+  .admin-tabs button.active { background:var(--accent); color:var(--accent-text); }
+  .admin-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:.85rem; gap:8px; }
+  .admin-row .actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .admin-row button { font-size:.75rem; padding:4px 8px; }
   table { width:100%; border-collapse:collapse; font-size:.82rem; }
   th, td { padding:8px; text-align:left; border-bottom:1px solid var(--border); }
   .pill { padding:2px 8px; border-radius:10px; font-size:.72rem; }
@@ -61,51 +165,123 @@
   .tab-btn { background:none; border:none; color:var(--muted); padding:8px 4px; margin-right:16px; cursor:pointer; border-bottom:2px solid transparent; }
   .tab-btn.active { color:var(--text); border-color:var(--accent); }
   .row-actions button { font-size:.72rem; padding:4px 8px; margin-right:4px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:6px; cursor:pointer; }
-  .close-x { float:right; cursor:pointer; color:var(--muted); }
-  .call-btn { background:var(--panel2); border:1px solid var(--border); color:var(--text); width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:.95rem; }
-  #incomingCall { position:fixed; top:16px; right:16px; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; z-index:80; display:none; box-shadow:0 8px 24px rgba(0,0,0,.4); }
-  #incomingCall .who { font-weight:600; margin-bottom:2px; }
-  #incomingCall .sub { color:var(--muted); font-size:.82rem; margin-bottom:12px; }
-  #incomingCall .actions { display:flex; gap:10px; }
-  #incomingCall button { flex:1; border:none; border-radius:8px; padding:9px; cursor:pointer; font-weight:600; }
-  #incomingCall .accept { background:var(--green); color:#111; }
-  #incomingCall .decline { background:var(--red); color:#fff; }
-  #callOverlay { position:fixed; inset:0; background:#0a0a0c; z-index:90; display:none; flex-direction:column; align-items:center; justify-content:center; color:var(--text); }
-  #callOverlay video#remoteVideo { max-width:100%; max-height:70vh; border-radius:12px; background:#000; }
-  #callOverlay video#localVideo { position:absolute; bottom:110px; right:24px; width:140px; border-radius:10px; border:2px solid var(--border); background:#000; }
-  #callOverlay .call-status { font-size:1.1rem; margin:16px 0 6px; }
-  #callOverlay .call-name { font-size:1.4rem; font-family:Georgia,serif; }
-  #callOverlay .call-controls { position:absolute; bottom:30px; display:flex; gap:16px; }
-  #callOverlay .call-controls button { width:54px; height:54px; border-radius:50%; border:none; cursor:pointer; font-size:1.2rem; }
-  #callOverlay .end-btn { background:var(--red); color:#fff; }
-  #callOverlay .toggle-btn { background:var(--panel2); color:var(--text); }
-  #callOverlay .toggle-btn.off { background:var(--accent); color:#111; }
+
+  /* --- Bottom nav (mobile) --- */
+  #bottomNav { display:none; }
+
+  /* --- Responsive --- */
+  @media (max-width: 860px) {
+    #rail { display:none; }
+    #listPane { width:100%; border-right:none; }
+    #main { position:fixed; inset:0; z-index:40; background:var(--bg); transform:translateX(100%); transition:transform .18s ease; }
+    #app.chat-open #main { transform:translateX(0); }
+    #app.chat-open #listPane { display:none; }
+    #backBtn { display:inline-block; }
+    #bottomNav { display:flex; position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--border); padding:6px 0 max(6px, env(safe-area-inset-bottom)); z-index:50; }
+    #bottomNav button { flex:1; background:none; border:none; color:var(--muted); font-size:1.25rem; padding:6px 0; cursor:pointer; }
+    #bottomNav button.active { color:var(--accent); }
+    #listPane { padding-bottom:56px; }
+    #callOverlay video#localVideo { width:90px; bottom:130px; right:14px; }
+    .msg { max-width:85%; }
+  }
 </style>
 </head>
 <body>
+
 <div id="app">
-  <div id="sidebar">
-    <div class="brand"><div class="badge">M</div>Melora</div>
-    <input id="search" placeholder="Rechercher...">
-    <div id="convList"></div>
-    <div id="topbar">
-      <span id="meName" style="font-size:.85rem;"></span>
-      <div style="display:flex;gap:8px;">
-        <button class="btn" id="adminBtn" style="display:none;" onclick="openAdmin()">Administration</button>
+  <nav id="rail">
+    <div class="brand-badge">M</div>
+    <button class="rail-btn active" id="railChats" onclick="switchView('chats')" title="Discussions">💬</button>
+    <button class="rail-btn" id="railStatuses" onclick="switchView('statuses')" title="Statuts">⭕</button>
+    <button class="rail-btn" id="railCalls" onclick="switchView('calls')" title="Appels">📞</button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" id="railSettings" onclick="switchView('settings')" title="Paramètres">⚙️</button>
+  </nav>
+
+  <div id="listPane">
+    <div id="paneChats">
+      <div class="pane-header">Discussions</div>
+      <input id="search" placeholder="Rechercher un contact...">
+      <div id="searchResults"></div>
+      <div class="filter-chips">
+        <button class="chip active" id="chipAll" onclick="setChatFilter('all')">Tous</button>
+        <button class="chip" id="chipUnread" onclick="setChatFilter('unread')">Non lus</button>
+      </div>
+      <div id="convList" class="scroll-list"></div>
+    </div>
+
+    <div id="paneStatuses" hidden style="display:flex;flex-direction:column;height:100%;">
+      <div class="pane-header">Statuts</div>
+      <div class="status-add-row" onclick="openStatusComposer()">
+        <div class="avatar" id="myStatusAvatar">?<span class="plus">+</span></div>
+        <div><div style="font-weight:600;font-size:.9rem;">Mon statut</div><div class="conv-preview">Appuie pour ajouter un statut</div></div>
+      </div>
+      <div id="statusList" class="scroll-list"></div>
+    </div>
+
+    <div id="paneCalls" hidden style="display:flex;flex-direction:column;height:100%;">
+      <div class="pane-header">Appels</div>
+      <div class="filter-chips">
+        <button class="chip active" id="chipCallsAll" onclick="setCallFilter('all')">Tous</button>
+        <button class="chip" id="chipCallsMissed" onclick="setCallFilter('missed')">Manqués</button>
+      </div>
+      <div id="callList" class="scroll-list"></div>
+    </div>
+
+    <div id="paneSettings" hidden>
+      <div class="pane-header">Paramètres</div>
+      <div class="settings-avatar" id="settingsAvatar">?</div>
+      <div class="settings-field">
+        <label>Nom affiché</label>
+        <input id="settingsName">
+      </div>
+      <div class="settings-field">
+        <label>Bio</label>
+        <textarea id="settingsBio" rows="2"></textarea>
+      </div>
+      <button class="btn primary block" onclick="saveProfile()">Enregistrer</button>
+
+      <div class="settings-row">
+        <span>Thème</span>
+        <div class="theme-switch">
+          <button id="themeDarkBtn" onclick="setTheme('dark')">Sombre</button>
+          <button id="themeLightBtn" onclick="setTheme('light')">Clair</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>Administration</span>
+        <button class="btn" id="adminBtn" style="display:none;" onclick="openAdmin()">Ouvrir</button>
+      </div>
+      <div class="settings-row">
+        <span>Déconnexion</span>
+        <button class="btn danger" onclick="logout()">Se déconnecter</button>
       </div>
     </div>
+
+    <div id="topbar">
+      <span id="meName" style="font-size:.85rem;"></span>
+    </div>
   </div>
+
   <div id="main">
-    <div id="chatHeader"><div class="empty-state" style="width:100%;">Sélectionne une conversation</div></div>
-    <div id="messages"></div>
+    <div id="chatHeader"></div>
+    <div id="chatPlaceholder">Choisis une conversation, ou cherche quelqu'un pour démarrer une discussion.</div>
+    <div id="messages" style="display:none;"></div>
     <div id="typingIndicator"></div>
-    <div id="composer" style="display:none;">
+    <div id="composer">
       <input id="msgInput" placeholder="Écrire un message..." onkeydown="if(event.key==='Enter')sendMessage()" oninput="onTyping()">
       <button id="micBtn" onclick="toggleVoiceRecording()" title="Note vocale">🎙️</button>
       <button onclick="sendMessage()">➤</button>
     </div>
   </div>
 </div>
+
+<nav id="bottomNav">
+  <button class="active" id="navChats" onclick="switchView('chats')">💬</button>
+  <button id="navStatuses" onclick="switchView('statuses')">⭕</button>
+  <button id="navCalls" onclick="switchView('calls')">📞</button>
+  <button id="navSettings" onclick="switchView('settings')">⚙️</button>
+</nav>
 
 <div id="incomingCall">
   <div class="who" id="incomingCallName"></div>
@@ -128,10 +304,26 @@
   </div>
 </div>
 
+<div id="statusOverlay">
+  <div class="close-x" onclick="closeStatusOverlay()" style="position:absolute;top:20px;right:24px;color:#fff;font-size:1.6rem;cursor:pointer;">✕</div>
+  <div class="status-top" id="statusOverlayTop"></div>
+  <div class="status-card" id="statusOverlayCard"></div>
+</div>
+
+<div id="statusComposer">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <span style="color:#fff;">Nouveau statut</span>
+    <span class="close-x" onclick="closeStatusComposer()" style="color:#fff;font-size:1.4rem;">✕</span>
+  </div>
+  <textarea id="statusText" maxlength="280" placeholder="Écris quelque chose..."></textarea>
+  <div class="swatches" id="statusSwatches"></div>
+  <button class="btn primary block" onclick="submitStatus()">Publier (24h)</button>
+</div>
+
 <div id="adminModal">
   <div class="box">
     <span class="close-x" onclick="closeAdmin()">✕</span>
-    <h2>Administration</h2>
+    <h2 style="margin-top:0;">Administration</h2>
     <div>
       <button class="tab-btn active" onclick="switchAdminTab('users')">Utilisateurs</button>
       <button class="tab-btn" onclick="switchAdminTab('conversations')">Conversations</button>
@@ -145,11 +337,9 @@
 
 <script>
 const token = localStorage.getItem('melora_token');
-if (!token) window.location.href = '/login.html';
-const me = JSON.parse(localStorage.getItem('melora_user') || '{}');
-document.getElementById('meName').textContent = me.display_name || '';
-if (me.role === 'admin' || me.role === 'super_admin') document.getElementById('adminBtn').style.display = 'inline-block';
-if (me.role === 'super_admin') document.getElementById('logTab').style.display = 'inline-block';
+const me = JSON.parse(localStorage.getItem('melora_user') || 'null');
+if (!token || !me) window.location.href = '/login.html';
+if (me) me.id = Number(me.id); // coercion défensive : les ids venant de Turso et du JWT doivent être comparés en Number partout
 
 if (localStorage.getItem('melora_must_change') === '1') {
   const np = prompt("Un administrateur a réinitialisé votre mot de passe. Choisissez un nouveau mot de passe (8 caractères min) :");
@@ -159,38 +349,99 @@ if (localStorage.getItem('melora_must_change') === '1') {
 }
 
 async function api(path, method = 'GET', body) {
-  const res = await fetch(`${window.MELORA_API_BASE}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) { localStorage.clear(); window.location.href = '/login.html'; return; }
-  return res.json();
+  try {
+    const res = await fetch(`${window.MELORA_API_BASE}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) { localStorage.clear(); window.location.href = '/login.html'; return; }
+    return await res.json();
+  } catch (err) {
+    console.error('Requête échouée:', path, err);
+    return { error: 'Impossible de joindre le serveur (réseau ou backend endormi — réessaie dans 30s).' };
+  }
 }
+
+document.getElementById('meName').textContent = me?.display_name || '';
+document.getElementById('settingsAvatar').textContent = (me?.display_name || '?')[0].toUpperCase();
+document.getElementById('myStatusAvatar').firstChild.textContent = (me?.display_name || '?')[0].toUpperCase();
+document.getElementById('settingsName').value = me?.display_name || '';
+document.getElementById('settingsBio').value = me?.bio || '';
+if (me?.role === 'admin' || me?.role === 'super_admin') document.getElementById('adminBtn').style.display = 'inline-block';
+
+
+function logout() {
+  localStorage.clear();
+  window.location.href = '/login.html';
+}
+
+// --- Thème ---
+function setTheme(t) {
+  localStorage.setItem('melora_theme', t);
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('themeDarkBtn').classList.toggle('active', t === 'dark');
+  document.getElementById('themeLightBtn').classList.toggle('active', t === 'light');
+}
+setTheme(localStorage.getItem('melora_theme') || 'dark');
+
+// --- Navigation entre les 4 onglets ---
+let currentView = 'chats';
+function switchView(view) {
+  currentView = view;
+  ['Chats', 'Statuses', 'Calls', 'Settings'].forEach(v => {
+    document.getElementById('pane' + v).hidden = v.toLowerCase() !== view;
+  });
+  ['rail', 'nav'].forEach(prefix => {
+    ['Chats', 'Statuses', 'Calls', 'Settings'].forEach(v => {
+      const el = document.getElementById(prefix + v);
+      if (el) el.classList.toggle('active', v.toLowerCase() === view);
+    });
+  });
+  closeMobileChat();
+  if (view === 'statuses') loadStatuses();
+  if (view === 'calls') loadCallLog();
+}
+
+function openMobileChat() { document.getElementById('app').classList.add('chat-open'); }
+function closeMobileChat() { document.getElementById('app').classList.remove('chat-open'); }
 
 let activeConvId = null;
 let activeConvName = '';
 let activePeerId = null;
 let typingTimeout = null;
+let allConversations = [];
+let chatFilter = 'all';
 
 async function loadConversations() {
-  // Rendu instantané depuis IndexedDB (marche hors-ligne / avant que le réseau ait répondu),
-  // puis on synchronise en tâche de fond avec le serveur et on met à jour le cache local.
   const cached = await window.idbLite.getConversations();
-  if (cached.length) renderConversationList(cached);
+  if (cached.length) { allConversations = cached; renderConversationList(); }
 
   if (!navigator.onLine) return;
   const data = await api('/api/conversations');
-  if (!data) return;
-  renderConversationList(data.conversations || []);
-  await window.idbLite.saveConversations(data.conversations || []);
-  updateBadge(data.conversations || []);
+  if (!data || data.error) return;
+  allConversations = data.conversations || [];
+  renderConversationList();
+  await window.idbLite.saveConversations(allConversations);
+  updateBadge(allConversations);
 }
 
-function renderConversationList(conversations) {
+function setChatFilter(f) {
+  chatFilter = f;
+  document.getElementById('chipAll').classList.toggle('active', f === 'all');
+  document.getElementById('chipUnread').classList.toggle('active', f === 'unread');
+  renderConversationList();
+}
+
+function renderConversationList() {
   const list = document.getElementById('convList');
+  const items = chatFilter === 'unread' ? allConversations.filter(c => c.unread_count > 0) : allConversations;
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty-hint">${chatFilter === 'unread' ? 'Aucune conversation non lue.' : "Aucune conversation pour l'instant — cherche quelqu'un ci-dessus pour démarrer."}</div>`;
+    return;
+  }
   list.innerHTML = '';
-  conversations.forEach(c => {
+  items.forEach(c => {
     const div = document.createElement('div');
     div.className = 'conv-item' + (c.id === activeConvId ? ' active' : '');
     div.onclick = () => openConversation(c.id, c.name || 'Conversation', c.peer_id || null);
@@ -215,28 +466,36 @@ async function openConversation(id, name, peerId = null) {
   activeConvId = id;
   activeConvName = name;
   if (peerId === null) {
-    const cached = await window.idbLite.getConversations();
-    peerId = cached.find(c => c.id === id)?.peer_id || null;
+    const match = allConversations.find(c => c.id === id);
+    peerId = match?.peer_id || null;
   }
   activePeerId = peerId;
+  openMobileChat();
+
+  document.getElementById('chatHeader').style.display = 'flex';
+  document.getElementById('chatPlaceholder').style.display = 'none';
+  document.getElementById('messages').style.display = 'flex';
   document.getElementById('chatHeader').innerHTML = `
+    <button id="backBtn" onclick="closeMobileChat()">←</button>
     <div class="avatar">${name[0].toUpperCase()}</div><strong style="flex:1">${name}</strong>
     ${peerId ? `
       <button class="call-btn" onclick="startCall('audio')" title="Appel audio">📞</button>
       <button class="call-btn" onclick="startCall('video')" title="Appel vidéo">🎥</button>
     ` : ''}`;
-  document.getElementById('chatHeader').style.display = 'flex';
-  document.getElementById('chatHeader').style.alignItems = 'center';
-  document.getElementById('chatHeader').style.gap = '10px';
   document.getElementById('composer').style.display = 'flex';
+  renderConversationList();
 
-  // Instantané depuis le cache local, avant même que la requête réseau parte.
   const cachedMsgs = await window.idbLite.getMessages(id);
   if (cachedMsgs.length) renderMessages(cachedMsgs);
+  else document.getElementById('messages').innerHTML = '<div class="empty-hint">Chargement...</div>';
 
-  if (!navigator.onLine) return; // reste sur le cache tant qu'on n'a pas de réseau
+  if (!navigator.onLine) return;
   const data = await api(`/api/conversations/${id}/messages`);
   if (!data) return;
+  if (data.error) {
+    document.getElementById('messages').innerHTML = `<div class="empty-hint">${data.error}</div>`;
+    return;
+  }
   renderMessages(data.messages || []);
   await window.idbLite.saveMessages(id, data.messages || []);
   loadConversations();
@@ -244,18 +503,30 @@ async function openConversation(id, name, peerId = null) {
   if (last) api(`/api/conversations/${id}/read`, 'PUT', { up_to_message_id: last.id });
 }
 
+async function refreshActiveMessages() {
+  if (!activeConvId || !navigator.onLine) return;
+  const data = await api(`/api/conversations/${activeConvId}/messages`);
+  if (!data || data.error) return;
+  renderMessages(data.messages || []);
+  await window.idbLite.saveMessages(activeConvId, data.messages || []);
+}
+
 function tickIcon(m) {
   if (m.status === 'pending') return '🕓';
-  if (m.read) return '<span style="color:#5bb8ff">✓✓</span>';
+  if (m.read) return '<span style="color:var(--blue-tick)">✓✓</span>';
   if (m.delivered) return '✓✓';
   return '✓';
 }
 
 function renderMessages(msgs) {
   const box = document.getElementById('messages');
+  if (!msgs || msgs.length === 0) {
+    box.innerHTML = '<div class="empty-hint">Aucun message pour l\'instant — écris le premier !</div>';
+    return;
+  }
   box.innerHTML = '';
   msgs.forEach(m => {
-    const mine = m.sender_id === me.id;
+    const mine = Number(m.sender_id) === Number(me.id);
     const div = document.createElement('div');
     div.className = 'msg ' + (mine ? 'me' : 'them');
     const body = m.type === 'voice'
@@ -276,7 +547,6 @@ async function sendMessage() {
   await sendMessagePayload({ type: 'text', content });
 }
 
-// Envoi générique (texte ou vocal) — gère la file d'attente hors-ligne.
 async function sendMessagePayload(payload) {
   const clientId = crypto.randomUUID();
   const optimistic = {
@@ -301,13 +571,10 @@ async function trySend(clientId, convId, payload) {
     if (convId === activeConvId) renderMessages(await window.idbLite.getMessages(convId));
     loadConversations();
   } catch {
-    // Réseau instable malgré navigator.onLine=true (faux positif fréquent) -> on met en file.
     await window.idbLite.queuePending({ client_message_id: clientId, conversation_id: convId, ...payload });
   }
 }
 
-// Rejoue tous les messages en attente dès que la connexion revient — sans jamais dupliquer
-// (même client_message_id qu'à la création, donc le serveur dédoublonne si un envoi a déjà réussi).
 async function flushPendingMessages() {
   const pending = await window.idbLite.getPending();
   for (const p of pending) {
@@ -325,30 +592,173 @@ function onTyping() {
   typingTimeout = setTimeout(() => api(`/api/conversations/${activeConvId}/typing`, 'POST', { typing: false }), 2000);
 }
 
+// --- Recherche pour démarrer une conversation ---
+let searchTimeout = null;
+document.getElementById('search').addEventListener('input', (e) => {
+  clearTimeout(searchTimeout);
+  const q = e.target.value.trim();
+  const box = document.getElementById('searchResults');
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  searchTimeout = setTimeout(async () => {
+    const data = await api(`/api/users/search?q=${encodeURIComponent(q)}`);
+    box.innerHTML = '';
+    (data?.users || []).forEach(u => {
+      const div = document.createElement('div');
+      div.className = 'conv-item';
+      div.innerHTML = `<div class="avatar">${u.display_name[0].toUpperCase()}</div><div class="conv-meta"><div class="conv-name"><span>${u.display_name}</span></div><div class="conv-preview">@${u.username}</div></div>`;
+      div.onclick = async () => {
+        const res = await api('/api/conversations', 'POST', { type: 'private', peer_id: u.id });
+        if (!res || res.error) return alert(res?.error || 'Impossible de démarrer la conversation.');
+        document.getElementById('search').value = '';
+        box.innerHTML = '';
+        openConversation(res.conversation.id, u.display_name, u.id);
+      };
+      box.appendChild(div);
+    });
+    if ((data?.users || []).length === 0) box.innerHTML = '<div class="empty-hint">Personne ne correspond à cette recherche.</div>';
+  }, 300);
+});
+
+// --- Profil (Paramètres) ---
+async function saveProfile() {
+  const display_name = document.getElementById('settingsName').value.trim();
+  const bio = document.getElementById('settingsBio').value.trim();
+  if (!display_name) return alert('Le nom affiché ne peut pas être vide.');
+  const res = await api('/api/users/me', 'PATCH', { display_name, bio });
+  if (!res || res.error) return alert(res?.error || 'Échec de la mise à jour.');
+  me.display_name = display_name; me.bio = bio;
+  localStorage.setItem('melora_user', JSON.stringify(me));
+  document.getElementById('meName').textContent = display_name;
+  alert('Profil mis à jour.');
+}
+
+// --- Statuts ---
+const STATUS_COLORS = ['#d9822b', '#2a9d55', '#2b7fd9', '#c0392b', '#7a52c9'];
+let statusComposerColor = STATUS_COLORS[0];
+function openStatusComposer() {
+  document.getElementById('statusText').value = '';
+  const sw = document.getElementById('statusSwatches');
+  sw.innerHTML = '';
+  STATUS_COLORS.forEach(c => {
+    const b = document.createElement('div');
+    b.className = 'swatch' + (c === statusComposerColor ? ' active' : '');
+    b.style.background = c;
+    b.onclick = () => { statusComposerColor = c; openStatusComposer(); };
+    sw.appendChild(b);
+  });
+  document.getElementById('statusComposer').style.display = 'flex';
+}
+function closeStatusComposer() { document.getElementById('statusComposer').style.display = 'none'; }
+async function submitStatus() {
+  const content = document.getElementById('statusText').value.trim();
+  if (!content) return;
+  const res = await api('/api/statuses', 'POST', { content, bg_color: statusComposerColor });
+  if (!res || res.error) return alert(res?.error || 'Échec de la publication.');
+  closeStatusComposer();
+  loadStatuses();
+}
+
+async function loadStatuses() {
+  const data = await api('/api/statuses');
+  const list = document.getElementById('statusList');
+  if (!data || data.error) { list.innerHTML = `<div class="empty-hint">${data?.error || 'Impossible de charger les statuts.'}</div>`; return; }
+  const statuses = data.statuses || [];
+  if (statuses.length === 0) { list.innerHTML = '<div class="empty-hint">Aucun statut actif pour le moment.</div>'; return; }
+  // Groupé par auteur, le plus récent en tête.
+  const byAuthor = new Map();
+  statuses.forEach(s => { if (!byAuthor.has(s.user_id)) byAuthor.set(s.user_id, []); byAuthor.get(s.user_id).push(s); });
+  list.innerHTML = '';
+  for (const [, items] of byAuthor) {
+    const s = items[0];
+    const allSeen = items.every(x => x.viewed_by_me);
+    const div = document.createElement('div');
+    div.className = 'status-item';
+    div.innerHTML = `
+      <div class="status-ring${allSeen ? ' seen' : ''}"><div class="avatar" style="background:${s.bg_color}">${s.author_name[0].toUpperCase()}</div></div>
+      <div><div style="font-weight:600;font-size:.9rem;">${s.author_name}</div><div class="status-time">${items.length} statut${items.length > 1 ? 's' : ''}</div></div>`;
+    div.onclick = () => viewStatusGroup(items, 0);
+    list.appendChild(div);
+  }
+}
+
+let statusGroupQueue = [];
+let statusGroupIndex = 0;
+function viewStatusGroup(items, index) {
+  statusGroupQueue = items;
+  statusGroupIndex = index;
+  showStatusAt(index);
+  document.getElementById('statusOverlay').style.display = 'flex';
+}
+function showStatusAt(i) {
+  const s = statusGroupQueue[i];
+  if (!s) return closeStatusOverlay();
+  document.getElementById('statusOverlayTop').innerHTML = `<div class="avatar" style="width:32px;height:32px;background:${s.bg_color}">${s.author_name[0].toUpperCase()}</div><strong>${s.author_name}</strong>`;
+  const card = document.getElementById('statusOverlayCard');
+  card.style.background = s.bg_color;
+  card.textContent = s.content;
+  api(`/api/statuses/${s.id}/view`, 'POST', {});
+}
+document.getElementById('statusOverlayCard').addEventListener('click', () => {
+  statusGroupIndex++;
+  if (statusGroupIndex >= statusGroupQueue.length) return closeStatusOverlay();
+  showStatusAt(statusGroupIndex);
+});
+function closeStatusOverlay() {
+  document.getElementById('statusOverlay').style.display = 'none';
+  loadStatuses();
+}
+
+// --- Journal des appels ---
+let callFilter = 'all';
+function setCallFilter(f) {
+  callFilter = f;
+  document.getElementById('chipCallsAll').classList.toggle('active', f === 'all');
+  document.getElementById('chipCallsMissed').classList.toggle('active', f === 'missed');
+  loadCallLog();
+}
+async function loadCallLog() {
+  const data = await api('/api/calls/log');
+  const list = document.getElementById('callList');
+  if (!data || data.error) { list.innerHTML = `<div class="empty-hint">${data?.error || 'Impossible de charger le journal.'}</div>`; return; }
+  let calls = data.calls || [];
+  if (callFilter === 'missed') calls = calls.filter(c => c.status === 'missed');
+  if (calls.length === 0) { list.innerHTML = `<div class="empty-hint">${callFilter === 'missed' ? 'Aucun appel manqué.' : 'Aucun appel pour le moment.'}</div>`; return; }
+  list.innerHTML = '';
+  calls.forEach(c => {
+    const dirIcon = c.status === 'missed' ? '↙' : (c.outgoing ? '↗' : '↙');
+    const dirClass = c.status === 'missed' ? 'missed' : 'in';
+    const label = c.status === 'missed' ? 'Manqué' : c.status === 'declined' ? 'Refusé' : c.outgoing ? 'Sortant' : 'Entrant';
+    const div = document.createElement('div');
+    div.className = 'call-item';
+    div.innerHTML = `
+      <div class="avatar">${(c.peer_name || '?')[0].toUpperCase()}</div>
+      <div class="conv-meta">
+        <div style="font-weight:600;font-size:.9rem;">${c.peer_name || 'Utilisateur'}</div>
+        <div class="call-line"><span class="call-dir ${dirClass}">${dirIcon}</span><span style="color:var(--muted);">${label} · ${c.mode === 'video' ? 'Vidéo' : 'Audio'} · ${new Date(c.started_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span></div>
+      </div>
+      <button class="call-quickbtn" title="Rappeler">📞</button>`;
+    div.querySelector('.call-quickbtn').onclick = async () => {
+      const res = await api('/api/conversations', 'POST', { type: 'private', peer_id: c.peer_id });
+      if (!res || res.error) return alert(res?.error || 'Impossible de démarrer la conversation.');
+      switchView('chats');
+      await openConversation(res.conversation.id, c.peer_name, c.peer_id);
+      startCall('audio');
+    };
+    list.appendChild(div);
+  });
+}
+
 // --- Temps réel ---
 const es = new EventSource(`${window.MELORA_API_BASE}/api/stream?token=${encodeURIComponent(token)}`);
 es.addEventListener('message.new', async (e) => {
   const data = JSON.parse(e.data);
   await window.idbLite.saveMessages(data.conversation_id, [{ ...data.message, status: 'sent' }]);
-  // Accusé "livré" dès réception SSE — avant même que l'utilisateur ait ouvert la conversation.
   if (data.message.sender_id !== me.id) {
     api(`/api/conversations/${data.conversation_id}/delivered`, 'PUT', { up_to_message_id: data.message.id });
   }
   if (data.conversation_id === activeConvId) openConversation(activeConvId, activeConvName);
   else loadConversations();
 });
-// Rafraîchit juste l'affichage (relit les messages + coches), sans jamais rappeler /read —
-// contrairement à openConversation(). Utilisé par les événements SSE delivered/read : sinon,
-// deux onglets ouverts sur la même conversation se renvoient l'accusé "lu" en boucle infinie
-// (A lit -> notifie B -> B rappelle /read -> notifie A -> A rappelle /read -> ...).
-async function refreshActiveMessages() {
-  if (!activeConvId || !navigator.onLine) return;
-  const data = await api(`/api/conversations/${activeConvId}/messages`);
-  if (!data) return;
-  renderMessages(data.messages || []);
-  await window.idbLite.saveMessages(activeConvId, data.messages || []);
-}
-
 es.addEventListener('message.delivered', (e) => {
   const data = JSON.parse(e.data);
   if (data.conversation_id === activeConvId) refreshActiveMessages();
@@ -368,105 +778,10 @@ es.addEventListener('force_logout', () => {
   window.location.href = '/login.html';
 });
 
-// --- Recherche pour démarrer une conversation ---
-document.getElementById('search').addEventListener('input', async (e) => {
-  const q = e.target.value.trim();
-  if (q.length < 2) return;
-  const data = await api(`/api/users/search?q=${encodeURIComponent(q)}`);
-  const list = document.getElementById('convList');
-  list.innerHTML = '';
-  (data.users || []).forEach(u => {
-    const div = document.createElement('div');
-    div.className = 'conv-item';
-    div.onclick = async () => {
-      const r = await api('/api/conversations', 'POST', { peer_id: u.id });
-      openConversation(r.conversation.id, u.display_name, u.id);
-      document.getElementById('search').value = '';
-      loadConversations();
-    };
-    div.innerHTML = `<div class="avatar">${u.display_name[0].toUpperCase()}</div><div class="conv-meta"><div class="conv-name">${u.display_name}</div><div class="conv-preview">@${u.username}</div></div>`;
-    list.appendChild(div);
-  });
-});
-
-// --- Administration ---
-function openAdmin() { document.getElementById('adminModal').style.display = 'flex'; loadAdminUsers(); }
-function closeAdmin() { document.getElementById('adminModal').style.display = 'none'; }
-function switchAdminTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('adminUsers').style.display = tab === 'users' ? 'block' : 'none';
-  document.getElementById('adminConversations').style.display = tab === 'conversations' ? 'block' : 'none';
-  document.getElementById('adminLog').style.display = tab === 'log' ? 'block' : 'none';
-  if (tab === 'users') loadAdminUsers();
-  if (tab === 'conversations') loadAdminConversations();
-  if (tab === 'log') loadAdminLog();
-}
-
-async function loadAdminUsers() {
-  const data = await api('/api/admin/users');
-  const el = document.getElementById('adminUsers');
-  el.innerHTML = `<table><thead><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${
-    (data.users || []).map(u => `
-      <tr>
-        <td>${u.display_name}<br><span style="color:var(--muted)">@${u.username}</span></td>
-        <td>${u.role}</td>
-        <td><span class="pill ${u.status}">${u.status === 'active' ? 'Actif' : 'Suspendu'}</span></td>
-        <td class="row-actions">
-          ${u.role !== 'super_admin' ? (u.status === 'active'
-            ? `<button onclick="suspendUser(${u.id})">Suspendre</button>`
-            : `<button onclick="unsuspendUser(${u.id})">Réactiver</button>`) : ''}
-          <button onclick="resetPassword(${u.id})">Réinit. mdp</button>
-          ${me.role === 'super_admin' && u.role !== 'super_admin' ? `<button onclick="changeRole(${u.id}, '${u.role === 'admin' ? 'member' : 'admin'}')">${u.role === 'admin' ? 'Rétrograder' : 'Promouvoir admin'}</button>` : ''}
-        </td>
-      </tr>`).join('')
-  }</tbody></table>`;
-}
-async function suspendUser(id) {
-  const reason = prompt('Motif de la suspension (optionnel) :') || null;
-  await api(`/api/admin/users/${id}/suspend`, 'PUT', { reason });
-  loadAdminUsers();
-}
-async function unsuspendUser(id) { await api(`/api/admin/users/${id}/unsuspend`, 'PUT'); loadAdminUsers(); }
-async function resetPassword(id) {
-  const r = await api(`/api/admin/users/${id}/reset-password`, 'POST', {});
-  alert(`Mot de passe temporaire généré : ${r.temporary_password}\n\nTransmets-le à la personne — il ne sera plus jamais affiché, et un changement sera exigé à sa prochaine connexion.`);
-}
-async function changeRole(id, role) { await api(`/api/admin/users/${id}/role`, 'PUT', { role }); loadAdminUsers(); }
-
-async function loadAdminConversations() {
-  const data = await api('/api/admin/conversations');
-  const el = document.getElementById('adminConversations');
-  el.innerHTML = `<table><thead><tr><th>Conversation</th><th>Type</th><th>Membres</th><th>Messages</th><th></th></tr></thead><tbody>${
-    (data.conversations || []).map(c => `
-      <tr>
-        <td>${c.name || 'Conversation privée #' + c.id}</td>
-        <td>${c.type}</td>
-        <td>${c.member_count}</td>
-        <td>${c.message_count}</td>
-        <td><button class="row-actions" onclick="viewConvMessages(${c.id})" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;">Consulter</button></td>
-      </tr>`).join('')
-  }</tbody></table>`;
-}
-async function viewConvMessages(id) {
-  const data = await api(`/api/admin/conversations/${id}/messages`);
-  const text = (data.messages || []).map(m => `[${m.created_at}] ${m.sender_name}: ${m.content || '(média)'}`).join('\n');
-  alert('Cette consultation est journalisée.\n\n' + (text || 'Aucun message.'));
-}
-async function loadAdminLog() {
-  const data = await api('/api/admin/access-log');
-  const el = document.getElementById('adminLog');
-  el.innerHTML = `<table><thead><tr><th>Admin</th><th>Action</th><th>Cible</th><th>Détail</th><th>Date</th></tr></thead><tbody>${
-    (data.log || []).map(l => `
-      <tr><td>${l.admin_name}</td><td>${l.action}</td><td>${l.target_name || '—'}</td><td>${l.detail || ''}</td><td>${new Date(l.created_at).toLocaleString('fr-FR')}</td></tr>`).join('')
-  }</tbody></table>`;
-}
-
 loadConversations();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(subscribeToPush);
 setInterval(() => api('/api/users/heartbeat', 'POST'), 60000);
 
-// --- Push notifications : reçoit un message même onglet fermé / service en veille ---
 function urlBase64ToUint8Array(base64) {
   const padding = '='.repeat((4 - base64.length % 4) % 4);
   const base64safe = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -475,9 +790,9 @@ function urlBase64ToUint8Array(base64) {
 }
 async function subscribeToPush(registration) {
   try {
-    if (!('PushManager' in window)) return; // navigateur sans support (ex: certains iOS non installés)
+    if (!('PushManager' in window)) return;
     const { enabled, public_key } = await api('/api/push/vapid-public-key');
-    if (!enabled) return; // pas de clés VAPID configurées côté serveur — SSE seul suffit
+    if (!enabled) return;
     const already = await registration.pushManager.getSubscription();
     if (already) return api('/api/push/subscribe', 'POST', { subscription: already.toJSON() });
     if (Notification.permission === 'denied') return;
@@ -493,9 +808,6 @@ async function subscribeToPush(registration) {
   }
 }
 
-// Installation PWA gérée par assets/js/install-prompt.js (universel Android/iOS/desktop).
-
-// --- Notes vocales (MediaRecorder -> base64 -> Turso, pas de S3/Cloudinary sur le plan gratuit) ---
 let mediaRecorder = null;
 let recordedChunks = [];
 async function toggleVoiceRecording() {
@@ -530,7 +842,6 @@ async function toggleVoiceRecording() {
   }
 }
 
-// --- Deep-link : clic sur une notification -> ouvre directement la bonne conversation ---
 navigator.serviceWorker?.addEventListener('message', (e) => {
   if (e.data?.type === 'navigate') openConversationFromUrl(e.data.url);
 });
@@ -541,7 +852,6 @@ function openConversationFromUrl(url) {
 const initialConvId = new URLSearchParams(location.search).get('conversation');
 if (initialConvId) openConversationFromUrl(location.href);
 
-// L'utilisateur revient sur l'app -> les notifs qu'il vient de voir ne comptent plus dans le badge.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && 'clearAppBadge' in navigator) {
     navigator.clearAppBadge().catch(() => {});
@@ -549,23 +859,21 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ============================================================
-// APPELS AUDIO/VIDÉO — WebRTC natif (RTCPeerConnection), pas de simple-peer :
-// une seule dépendance à éviter de plus, et l'API native suffit largement ici.
-// Signaling entièrement relayé via le canal SSE déjà ouvert + les routes /api/calls/*.
+// APPELS AUDIO/VIDÉO — WebRTC natif (RTCPeerConnection), signaling relayé via SSE + /api/calls/*.
 // ============================================================
-let activeCall = null;      // { callId, peerId, mode, pc, localStream, isCaller }
-let incomingCall = null;    // appel entrant en attente de décision (accept/decline)
+let activeCall = null;
+let incomingCall = null;
 
 async function getIceServers() {
   try {
     const data = await api('/api/calls/ice-servers');
     return data?.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }];
   } catch {
-    return [{ urls: 'stun:stun.l.google.com:19302' }]; // dégrade sans bloquer l'appel
+    return [{ urls: 'stun:stun.l.google.com:19302' }];
   }
 }
 
-function buildPeerConnection(iceServers, callId, otherId) {
+function buildPeerConnection(iceServers, callId) {
   const pc = new RTCPeerConnection({ iceServers });
   pc.onicecandidate = (e) => {
     if (e.candidate) api(`/api/calls/${callId}/signal`, 'POST', { signal_type: 'ice-candidate', payload: e.candidate });
@@ -587,24 +895,19 @@ async function startCall(mode) {
   const iceServers = await getIceServers();
   const res = await api('/api/calls/invite', 'POST', { conversation_id: activeConvId, mode });
   if (!res || res.error) return alert(res?.error || "Impossible de démarrer l'appel.");
-  if (res.warning) return alert(res.warning); // correspondant hors ligne, push envoyé
+  if (res.warning) return alert(res.warning);
 
   const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: mode === 'video' });
-  const pc = buildPeerConnection(iceServers, res.call_id, activePeerId);
+  const pc = buildPeerConnection(iceServers, res.call_id);
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
   activeCall = { callId: res.call_id, peerId: activePeerId, mode, pc, localStream, isCaller: true };
   showCallOverlay(activeConvName, mode, 'Appel en cours...');
-  // L'offre SDP n'est envoyée qu'une fois l'appelé décroché (voir 'call.accepted' ci-dessous) —
-  // pas la peine de négocier avant que quelqu'un ait dit oui.
 }
 
 es.addEventListener('call.invite', (e) => {
   const data = JSON.parse(e.data);
-  if (activeCall || incomingCall) {
-    // Déjà en ligne -> on refuse poliment plutôt que de laisser sonner sans réponse possible.
-    return api(`/api/calls/${data.call_id}/decline`, 'POST', {});
-  }
+  if (activeCall || incomingCall) return api(`/api/calls/${data.call_id}/decline`, 'POST', {});
   incomingCall = data;
   document.getElementById('incomingCallName').textContent = data.from.display_name;
   document.getElementById('incomingCallMode').textContent = data.mode === 'video' ? 'Appel vidéo entrant' : 'Appel audio entrant';
@@ -619,13 +922,12 @@ async function acceptIncomingCall() {
 
   const iceServers = await getIceServers();
   const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: mode === 'video' });
-  const pc = buildPeerConnection(iceServers, call_id, from.id);
+  const pc = buildPeerConnection(iceServers, call_id);
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
   activeCall = { callId: call_id, peerId: from.id, mode, pc, localStream, isCaller: false };
   showCallOverlay(from.display_name, mode, 'Connexion...');
   await api(`/api/calls/${call_id}/accept`, 'POST', {});
-  // On attend maintenant l'offre SDP du côté appelant (événement 'call.signal' ci-dessous).
 }
 
 function declineIncomingCall() {
@@ -635,7 +937,6 @@ function declineIncomingCall() {
   incomingCall = null;
 }
 
-// L'appelant crée et envoie son offre seulement une fois que l'appelé a décroché.
 es.addEventListener('call.accepted', async (e) => {
   const data = JSON.parse(e.data);
   if (!activeCall || activeCall.callId !== data.call_id || !activeCall.isCaller) return;
@@ -658,7 +959,7 @@ es.addEventListener('call.signal', async (e) => {
     await pc.setRemoteDescription(new RTCSessionDescription(payload));
     document.getElementById('callStatus').textContent = 'En communication';
   } else if (signal_type === 'ice-candidate') {
-    try { await pc.addIceCandidate(new RTCIceCandidate(payload)); } catch { /* candidat obsolète, sans gravité */ }
+    try { await pc.addIceCandidate(new RTCIceCandidate(payload)); } catch {}
   }
 });
 
@@ -688,6 +989,7 @@ function cleanupCall() {
   document.getElementById('callOverlay').style.display = 'none';
   document.getElementById('remoteVideo').srcObject = null;
   document.getElementById('localVideo').srcObject = null;
+  if (currentView === 'calls') loadCallLog();
 }
 
 function toggleMute() {
@@ -702,6 +1004,84 @@ function toggleCamera() {
   track.enabled = !track.enabled;
   document.getElementById('camBtn').classList.toggle('off', !track.enabled);
 }
+
+// ============================================================
+// ADMINISTRATION
+// ============================================================
+function openAdmin() {
+  document.getElementById('logTab').style.display = me.role === 'super_admin' ? 'inline-block' : 'none';
+  document.getElementById('adminModal').style.display = 'flex';
+  loadAdminUsers();
+}
+function closeAdmin() { document.getElementById('adminModal').style.display = 'none'; }
+function switchAdminTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('adminUsers').style.display = tab === 'users' ? 'block' : 'none';
+  document.getElementById('adminConversations').style.display = tab === 'conversations' ? 'block' : 'none';
+  document.getElementById('adminLog').style.display = tab === 'log' ? 'block' : 'none';
+  if (tab === 'users') loadAdminUsers();
+  if (tab === 'conversations') loadAdminConversations();
+  if (tab === 'log') loadAdminLog();
+}
+async function loadAdminUsers() {
+  const data = await api('/api/admin/users');
+  const el = document.getElementById('adminUsers');
+  el.innerHTML = `<table><thead><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${
+    (data.users || []).map(u => `
+      <tr>
+        <td>${u.display_name}<br><span style="color:var(--muted)">@${u.username}</span></td>
+        <td>${u.role}</td>
+        <td><span class="pill ${u.status}">${u.status === 'active' ? 'Actif' : 'Suspendu'}</span></td>
+        <td class="row-actions">
+          ${u.role !== 'super_admin' ? (u.status === 'active'
+            ? `<button onclick="suspendUser(${u.id})">Suspendre</button>`
+            : `<button onclick="unsuspendUser(${u.id})">Réactiver</button>`) : ''}
+          <button onclick="resetPassword(${u.id})">Réinit. mdp</button>
+          ${me.role === 'super_admin' && u.role !== 'super_admin' ? `<button onclick="changeRole(${u.id}, '${u.role === 'admin' ? 'member' : 'admin'}')">${u.role === 'admin' ? 'Rétrograder' : 'Promouvoir admin'}</button>` : ''}
+        </td>
+      </tr>`).join('')
+  }</tbody></table>`;
+}
+async function suspendUser(id) {
+  const reason = prompt('Motif de la suspension (optionnel) :') || null;
+  await api(`/api/admin/users/${id}/suspend`, 'PUT', { reason });
+  loadAdminUsers();
+}
+async function unsuspendUser(id) { await api(`/api/admin/users/${id}/unsuspend`, 'PUT'); loadAdminUsers(); }
+async function resetPassword(id) {
+  const r = await api(`/api/admin/users/${id}/reset-password`, 'POST', {});
+  alert(`Mot de passe temporaire généré : ${r.temporary_password}\n\nTransmets-le à la personne — il ne sera plus jamais affiché, et un changement sera exigé à sa prochaine connexion.`);
+}
+async function changeRole(id, role) { await api(`/api/admin/users/${id}/role`, 'PUT', { role }); loadAdminUsers(); }
+async function loadAdminConversations() {
+  const data = await api('/api/admin/conversations');
+  const el = document.getElementById('adminConversations');
+  el.innerHTML = `<table><thead><tr><th>Conversation</th><th>Type</th><th>Membres</th><th>Messages</th><th></th></tr></thead><tbody>${
+    (data.conversations || []).map(c => `
+      <tr>
+        <td>${c.name || 'Conversation privée #' + c.id}</td>
+        <td>${c.type}</td>
+        <td>${c.member_count}</td>
+        <td>${c.message_count}</td>
+        <td><button class="row-actions" onclick="viewConvMessages(${c.id})" style="background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer;">Consulter</button></td>
+      </tr>`).join('')
+  }</tbody></table>`;
+}
+async function viewConvMessages(id) {
+  const data = await api(`/api/admin/conversations/${id}/messages`);
+  const text = (data.messages || []).map(m => `[${m.created_at}] ${m.sender_name}: ${m.content || '(média)'}`).join('\n');
+  alert('Cette consultation est journalisée.\n\n' + (text || 'Aucun message.'));
+}
+async function loadAdminLog() {
+  const data = await api('/api/admin/access-log');
+  const el = document.getElementById('adminLog');
+  el.innerHTML = `<table><thead><tr><th>Admin</th><th>Action</th><th>Cible</th><th>Détail</th><th>Date</th></tr></thead><tbody>${
+    (data.log || []).map(l => `
+      <tr><td>${l.admin_name}</td><td>${l.action}</td><td>${l.target_name || '—'}</td><td>${l.detail || ''}</td><td>${new Date(l.created_at).toLocaleString('fr-FR')}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
 </script>
 </body>
 </html>

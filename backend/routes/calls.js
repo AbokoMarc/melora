@@ -3,16 +3,12 @@ import { json, parseBody } from '../lib/http.js';
 import { requireActiveUser } from '../lib/auth.js';
 import { notifyUser, isOnline } from '../lib/sse.js';
 import { sendPushToUser } from '../lib/push.js';
-import { createCall, getCall, updateCallStatus, endCall } from '../lib/calls.js';
+import { createCall, getCall, markAccepted, finishCall, logMissedOfflineCall } from '../lib/calls.js';
 
 export async function handleCalls(req, res, urlPath) {
   if (!urlPath.startsWith('/api/calls')) return null;
 
   // Serveurs STUN/TURN pour l'établissement de connexion WebRTC.
-  // STUN public Google : gratuit, suffit pour la plupart des réseaux domestiques/mobiles.
-  // TURN (relais media quand le NAT bloque le direct, ex: NAT symétrique) : optionnel —
-  // laisse TURN_URL vide et les appels marcheront quand même dans la majorité des cas,
-  // juste pas sur les réseaux les plus restrictifs (ex: certains Wi-Fi d'entreprise).
   if (urlPath === '/api/calls/ice-servers' && req.method === 'GET') {
     const user = await requireActiveUser(req, res);
     if (!user) return;
@@ -25,6 +21,25 @@ export async function handleCalls(req, res, urlPath) {
       });
     }
     return json(res, 200, { ice_servers: iceServers });
+  }
+
+  // --- Journal des appels (onglet "Appels" : tous / manqués) ---
+  if (urlPath === '/api/calls/log' && req.method === 'GET') {
+    const user = await requireActiveUser(req, res);
+    if (!user) return;
+    const rows = await db.prepare(`
+      SELECT cl.id, cl.mode, cl.status, cl.started_at, cl.ended_at, cl.caller_id, cl.callee_id,
+             CASE WHEN cl.caller_id = ? THEN cl.callee_id ELSE cl.caller_id END AS peer_id,
+             CASE WHEN cl.caller_id = ? THEN peer_callee.display_name ELSE peer_caller.display_name END AS peer_name,
+             (cl.caller_id = ?) AS outgoing
+      FROM call_logs cl
+      LEFT JOIN users peer_callee ON peer_callee.id = cl.callee_id
+      LEFT JOIN users peer_caller ON peer_caller.id = cl.caller_id
+      WHERE cl.caller_id = ? OR cl.callee_id = ?
+      ORDER BY cl.started_at DESC
+      LIMIT 100
+    `).all(user.id, user.id, user.id, user.id, user.id);
+    return json(res, 200, { calls: rows });
   }
 
   // --- Démarrer un appel (audio ou vidéo) vers un membre d'une conversation privée ---
@@ -49,18 +64,17 @@ export async function handleCalls(req, res, urlPath) {
     if (!peer) return json(res, 404, { error: 'Correspondant introuvable.' });
 
     if (!isOnline(peer.user_id)) {
-      // On tente quand même un push (l'appelé peut ouvrir l'app et rappeler), mais on prévient
-      // l'appelant tout de suite plutôt que de le laisser sonner dans le vide sans explication.
+      await logMissedOfflineCall({ callerId: user.id, calleeId: peer.user_id, mode });
       const caller = await db.prepare('SELECT display_name FROM users WHERE id = ?').get(user.id);
       sendPushToUser(peer.user_id, {
         title: `${caller?.display_name || 'Quelqu\'un'} vous appelle`,
-        body: mode === 'video' ? 'Appel vidéo' : 'Appel audio',
+        body: mode === 'video' ? 'Appel vidéo manqué' : 'Appel audio manqué',
         url: `/app.html?conversation=${conversation_id}`,
       }).catch(() => {});
-      return json(res, 202, { warning: "Correspondant hors ligne — notification envoyée, pas de sonnerie en direct possible." });
+      return json(res, 202, { warning: "Correspondant hors ligne — appel enregistré comme manqué, notification envoyée." });
     }
 
-    const callId = createCall({ callerId: user.id, calleeId: peer.user_id, conversationId: conversation_id, mode });
+    const callId = await createCall({ callerId: user.id, calleeId: peer.user_id, conversationId: conversation_id, mode });
     const caller = await db.prepare('SELECT id, display_name, avatar FROM users WHERE id = ?').get(user.id);
     notifyUser(peer.user_id, 'call.invite', { call_id: callId, conversation_id, mode, from: caller });
     return json(res, 201, { call_id: callId });
@@ -79,13 +93,13 @@ export async function handleCalls(req, res, urlPath) {
     const otherId = user.id === call.callerId ? call.calleeId : call.callerId;
 
     if (action === 'accept') {
-      updateCallStatus(callId, 'active');
+      await markAccepted(callId);
       notifyUser(otherId, 'call.accepted', { call_id: callId });
     } else if (action === 'decline') {
-      endCall(callId);
+      await finishCall(callId, 'declined');
       notifyUser(otherId, 'call.declined', { call_id: callId });
     } else {
-      endCall(callId);
+      await finishCall(callId);
       notifyUser(otherId, 'call.ended', { call_id: callId, by: user.id });
     }
     return json(res, 200, { success: true });

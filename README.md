@@ -6,65 +6,62 @@ Turso (SQLite hébergé), SSE pour le temps réel, WebRTC natif pour les appels.
 ## Ce qui est livré
 
 - **Auth** : inscription, connexion, changement de mot de passe, hashing scrypt
-- **Conversations privées + groupes**, création, liste avec dernier message, compteur de non-lus
-- **Messages temps réel** : idempotents (`client_message_id`), pagination cursor, diffusion SSE
-- **Double coche** sent → delivered (SSE reçu) → read (lu à l'écran)
-- **Indicateur « écrit... »** éphémère, **présence** en mémoire (en ligne / dernière connexion)
-- **Notes vocales** : `MediaRecorder` → base64 → Turso (30s max — pas de S3/Cloudinary, cf. choix ci-dessous)
-- **Appels audio/vidéo** : WebRTC natif (`RTCPeerConnection`), signaling relayé sur le canal SSE existant + routes `/api/calls/*`. STUN public Google par défaut, TURN optionnel (ex: metered.ca)
-- **PWA installable et offline-first** :
-  - IndexedDB (mini-wrapper maison, `assets/js/idb-lite.js`) : conversations et messages lus instantanément depuis le cache local, synchronisés en tâche de fond
-  - File d'attente hors-ligne : message envoyé sans réseau → statut "pending" (🕓), rejoué automatiquement au retour de connexion, sans doublon
-  - Notifications push (VAPID) + badge d'icône (`setAppBadge`/`clearAppBadge`) + clic sur notif → ouvre directement la bonne conversation
-- **Administration complète** : suspendre/réactiver, réinitialiser un mot de passe, consulter les messages de n'importe quelle conversation (journalisé), gérer les rôles, journal d'audit (super_admin)
+- **4 onglets, comme WhatsApp** : Discussions / Statuts / Appels / Paramètres (rail à gauche sur desktop, barre en bas sur mobile)
+- **Discussions** : privées + groupes, filtre Tous/Non lus, recherche pour démarrer une conversation, double coche sent→delivered→read, notes vocales, hors-ligne (IndexedDB + file d'attente)
+- **Statuts 24h** : texte avec couleur de fond au choix, vues comptabilisées, expiration automatique (filtrée côté requête)
+- **Appels audio/vidéo** : WebRTC natif, journal complet (tous / manqués) rejouable depuis l'onglet Appels, rappel en un tap
+- **Paramètres** : modifier nom/bio, **thème clair/sombre** (clair = fond crème + accents bleu léger), déconnexion, accès admin si applicable
+- **Responsive réel** : un seul panneau visible à la fois sur mobile (navigation par onglets + bouton retour), disposition à 3 colonnes sur desktop — plus l'ancien layout figé non adapté
+- **PWA installable et offline-first** : IndexedDB, file d'attente hors-ligne, notifications push (VAPID) + badge, installation Android/iOS/desktop (bandeau adapté à chaque plateforme)
+- **Administration complète** : suspendre/réactiver, réinitialiser un mot de passe, consulter les messages (journalisé), rôles, journal d'audit
+
+## Corrigé dans cette passe
+
+- **CORS manquant sur les réponses d'erreur** (401/403/404/500) dans `lib/auth.js` et `server.js` — invisible en local (même origine), bloquant une fois Render et Vercel sur deux domaines différents. Toutes les réponses ont maintenant l'en-tête.
+- **`message.read` jamais écouté côté client** — la coche bleue ne se mettait à jour qu'au rechargement. Ajouté, avec une fonction de rafraîchissement séparée de `/read` pour éviter un ping-pong infini entre deux onglets ouverts sur la même conversation.
+- **Redirection bloquée dans le service worker** (`sw.js`) — cause du fameux `ERR_FAILED` / "a redirected response was used for a request whose redirect mode is not follow".
+- **Écran de conversation vide sans explication** — ajout d'un état vide explicite ("Aucun message pour l'instant") au lieu d'un blanc silencieux qui donnait l'impression que l'app était cassée.
+- **Comparaisons d'identifiants fragilisées** (`sender_id === me.id`) — passées en `Number(...)` des deux côtés par précaution, au cas où le driver Turso renverrait un entier sous une forme différente selon le contexte.
 
 ## Pas encore fait
 
-- **Statuts 24h** (texte/image/vidéo, vues, réactions) — prochaine phase
-- Groupes : appels non supportés pour l'instant (uniquement conversations privées)
+- Statuts image/vidéo (texte seulement pour l'instant)
+- Appels en groupe (uniquement 1-à-1)
+- Upload d'avatar (le profil se modifie en texte pour l'instant)
 
 ## Choix délibérés (et pourquoi)
 
-- **Pas de React/Vite, pas d'Express** : vanilla JS servi tel quel, `http` natif — pas de build, pas de dépendance à auditer en plus, cohérent avec Roomia
-- **Pas de lib `idb`** : ce projet n'a pas de bundler, une dépendance npm ne serait pas chargeable côté navigateur sans étape de build → mini-wrapper IndexedDB maison à la place
-- **Pas de `simple-peer`** : l'API `RTCPeerConnection` native suffit, une dépendance de moins
-- **Pas de Cloudinary/S3** : notes vocales en base64 dans Turso, plafonnées à 30s — à revoir si le volume augmente sérieusement
-- **SSE plutôt que WebSocket** : sur un process unique / free tier, WebSocket n'apporte aucun avantage réel ici et coûte plus de code à maintenir en solo
+- Pas de React/Vite, pas d'Express : vanilla JS servi tel quel, `http` natif
+- Pas de lib `idb`, pas de `simple-peer` : pas de bundler dans ce projet, dépendances natives à la place
+- Pas de Cloudinary/S3 : notes vocales en base64 dans Turso, plafonnées à 30s
+- SSE plutôt que WebSocket : aucun avantage réel sur un process unique / free tier
 
 ## ⚠️ Limite de cet environnement
 
-Pas d'accès réseau dans ce sandbox (`npm install` impossible), donc **je n'ai pu que vérifier
-la syntaxe** (`node --check` sur tous les fichiers, tous OK) — pas de vrai test d'exécution.
-**Teste réellement en local avant de déployer.**
+Pas d'accès réseau dans ce sandbox (`npm install` impossible) : uniquement vérifié à la
+syntaxe (`node --check`, tous fichiers) + cohérence endpoints client/serveur + équilibre
+des balises HTML. **Teste réellement en local avant de redéployer.**
 
-## Installation locale (tout-en-un, comme avant)
+## Installation locale
 
-\`\`\`bash
+```bash
 cd backend
 npm install
 cp .env.example .env
-# éditer .env : JWT_SECRET (openssl rand -hex 32), ADMIN_EMAIL, ADMIN_PASSWORD
-# optionnel : npm run vapid:generate -> VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (sinon push désactivé, le reste marche)
+# éditer .env : JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD, TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+# optionnel : npx web-push generate-vapid-keys -> VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
 node server.js
-\`\`\`
+```
 
-Ouvre `http://localhost:4000`. `frontend/config.js` doit rester `window.MELORA_API_BASE = ''`
-en local (chemins relatifs = même serveur).
+`frontend/config.js` doit rester `window.MELORA_API_BASE = ''` en local.
 
-À tester dans l'ordre :
-1. Deux comptes, deux onglets → discuter en temps réel
-2. Couper le réseau (DevTools → Network → Offline) en plein envoi → vérifier aucun doublon au retour
-3. Fermer complètement l'onglet, envoyer un message depuis l'autre compte → vérifier la notification push + le badge
-4. Lancer un appel audio puis vidéo entre les deux onglets (accepter l'accès micro/caméra)
-5. Admin → suspendre l'autre compte → vérifier déconnexion immédiate + journal d'audit
+## Déploiement Render + Vercel + Turso
 
-## Déploiement séparé : Render (backend) + Vercel (frontend) + Turso (DB)
-
-1. **Turso** : créer une base sur [turso.tech](https://turso.tech), récupérer `TURSO_DATABASE_URL` et `TURSO_AUTH_TOKEN`
-2. **Render** (backend) : New → Blueprint → `render.yaml` → renseigner `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (optionnel), `TURN_URL`/`TURN_USERNAME`/`TURN_CREDENTIAL` (optionnel) — `JWT_SECRET` est généré automatiquement. Noter l'URL Render obtenue (ex: `https://melora.onrender.com`)
-3. **Vercel** (frontend) : importer le repo, définir le **Root Directory du projet Vercel sur `frontend/`** (aucun build command — fichiers statiques servis tels quels, `vercel.json` déjà présent dedans)
-4. Éditer `frontend/config.js` avec l'URL Render obtenue à l'étape 2, commit + push (Vercel redéploie automatiquement)
-
-Rappel : Render free tier se met en veille après ~15 min d'inactivité (réveil 30-50s, coupe les
-connexions SSE en cours) — c'est pour ça que les notifications push sont indispensables : elles
-ne dépendent pas de cette connexion et passent même service en veille.
+Voir les échanges précédents pour le pas-à-pas détaillé (dashboards, pas de CLI nécessaire).
+Rappels :
+- Render : Root Directory `backend`, Build `npm install`, Start `npm start`, Health Check `/health`
+- Vercel : Root Directory `frontend`, aucune build command
+- Après déploiement : éditer `frontend/config.js` avec l'URL Render, désactiver **Vercel Authentication**
+  (Settings → Deployment Protection) sinon le SSO de Vercel bloque tout
+- Après toute mise à jour de `sw.js` : F12 → Application → Service Workers → **Unregister**,
+  puis **Clear site data**, avant de retester — sinon l'ancienne version reste active

@@ -142,9 +142,41 @@ await db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Journal des appels (audio/vidéo) : alimente l'onglet "Appels" (tous / manqués), comme WhatsApp.
+  CREATE TABLE IF NOT EXISTS call_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caller_id INTEGER NOT NULL REFERENCES users(id),
+    callee_id INTEGER NOT NULL REFERENCES users(id),
+    mode TEXT NOT NULL, -- audio | video
+    status TEXT NOT NULL DEFAULT 'ringing', -- ringing | answered(transitoire) | ended | declined | missed
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    answered_at TEXT,
+    ended_at TEXT
+  );
+
+  -- Statuts 24h (texte pour l'instant — image/vidéo pas encore branchés, cf. note dans le README).
+  CREATE TABLE IF NOT EXISTS statuses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    type TEXT NOT NULL DEFAULT 'text', -- text (image/video prévus plus tard)
+    content TEXT NOT NULL,
+    bg_color TEXT NOT NULL DEFAULT '#d9822b',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS status_views (
+    status_id INTEGER NOT NULL REFERENCES statuses(id),
+    viewer_id INTEGER NOT NULL REFERENCES users(id),
+    viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (status_id, viewer_id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_admin_log_admin ON admin_access_log(admin_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_call_logs_users ON call_logs(caller_id, callee_id, started_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_statuses_expiry ON statuses(expires_at);
 `);
 
 export default db;
