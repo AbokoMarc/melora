@@ -15,7 +15,7 @@ function base64urlDecode(str) {
   return Buffer.from(str, 'base64').toString();
 }
 
-export function signToken(payload, expiresInSec = 60 * 60 * 24 * 30) {
+export function signToken(payload, expiresInSec = 60 * 60 * 24 * 365) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const body = { ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + expiresInSec };
   const h = base64url(JSON.stringify(header));

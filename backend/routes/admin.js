@@ -112,7 +112,9 @@ export async function handleAdmin(req, res, urlPath, urlObj) {
     const rows = await db.prepare(`
       SELECT c.id, c.type, c.name, c.created_at,
              (SELECT COUNT(*) FROM conversation_members m WHERE m.conversation_id = c.id) AS member_count,
-             (SELECT COUNT(*) FROM messages msg WHERE msg.conversation_id = c.id) AS message_count
+             (SELECT COUNT(*) FROM messages msg WHERE msg.conversation_id = c.id) AS message_count,
+             (SELECT GROUP_CONCAT(u.display_name, ' ↔ ') FROM conversation_members m
+                JOIN users u ON u.id = m.user_id WHERE m.conversation_id = c.id) AS participants
       FROM conversations c ORDER BY c.created_at DESC
     `).all();
     return json(res, 200, { conversations: rows });

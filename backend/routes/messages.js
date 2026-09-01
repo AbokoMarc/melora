@@ -1,12 +1,22 @@
 import { db } from '../db.js';
 import { json, parseBody } from '../lib/http.js';
 import { requireActiveUser } from '../lib/auth.js';
-import { notifyUsers, isOnline } from '../lib/sse.js';
+import { notifyUsers } from '../lib/sse.js';
 import { sendPushToUser } from '../lib/push.js';
 
 async function membersOf(conversationId) {
   const rows = await db.prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ?').all(conversationId);
   return rows.map(r => r.user_id);
+}
+
+// Masque le contenu d'un message "vu unique" déjà consulté, pour tout le monde SAUF son
+// expéditeur — jamais pour l'admin (routes/admin.js ne passe pas par cette fonction du tout,
+// il lit les messages directement, donc la modération garde un accès complet).
+function redactIfConsumed(m, viewerId) {
+  if (m.view_once && m.viewed_once_at && m.sender_id !== viewerId) {
+    return { ...m, content: null, media_url: null, redacted: true };
+  }
+  return m;
 }
 
 // Somme des non-lus sur toutes les conversations — alimente navigator.setAppBadge() côté client.
@@ -52,7 +62,25 @@ export async function handleMessages(req, res, urlPath, urlObj) {
           ORDER BY m.id DESC LIMIT ?
         `).all(convId, limit);
 
-    return json(res, 200, { messages: rows.reverse(), has_more: rows.length === limit });
+    return json(res, 200, { messages: rows.reverse().map(m => redactIfConsumed(m, user.id)), has_more: rows.length === limit });
+  }
+
+  // --- Révéler un message "vu unique" (le contenu disparaît ensuite pour tout le monde
+  // sauf l'expéditeur et l'administration, qui garde un accès complet à des fins de modération) ---
+  const consumeMatch = urlPath.match(/^\/api\/messages\/(\d+)\/consume-once$/);
+  if (consumeMatch && req.method === 'POST') {
+    const user = await requireActiveUser(req, res);
+    if (!user) return;
+    const messageId = Number(consumeMatch[1]);
+    const message = await db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    if (!message) return json(res, 404, { error: 'Message introuvable.' });
+    const isMember = await db.prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?').get(message.conversation_id, user.id);
+    if (!isMember) return json(res, 403, { error: 'Accès refusé.' });
+    if (message.sender_id === user.id) return json(res, 200, { content: message.content, media_url: message.media_url }); // l'auteur garde toujours accès
+    if (!message.viewed_once_at) {
+      await db.prepare("UPDATE messages SET viewed_once_at = datetime('now') WHERE id = ?").run(messageId);
+    }
+    return json(res, 200, { content: message.content, media_url: message.media_url });
   }
 
   // --- Envoi d'un message (idempotent via client_message_id) ---
@@ -64,13 +92,16 @@ export async function handleMessages(req, res, urlPath, urlObj) {
     if (!isMember) return json(res, 403, { error: 'Accès refusé à cette conversation.' });
 
     const body = await parseBody(req);
-    const { client_message_id, type, content, media_url, reply_to_id } = body;
+    const { client_message_id, type, content, media_url, reply_to_id, filename, view_once } = body;
     if (!client_message_id) return json(res, 400, { error: 'client_message_id requis (idempotence).' });
     if (!content && !media_url) return json(res, 400, { error: 'Message vide.' });
-    // Notes vocales stockées en base64 dans Turso (pas de S3/Cloudinary sur le plan gratuit) —
-    // on plafonne pour ne pas gonfler la base : ~350 Ko encodés ≈ 25-30s d'audio compressé.
-    if (type === 'voice' && content && content.length > 350_000) {
-      return json(res, 413, { error: 'Note vocale trop longue (30s max).' });
+    // Médias stockés en base64 dans Turso (pas de S3/Cloudinary sur le plan gratuit) — plafonds
+    // par type pour ne pas gonfler la base. Vidéo particulièrement limité : sans stockage objet,
+    // une vraie vidéo n'a pas sa place dans une colonne texte — à revoir si le volume augmente.
+    const SIZE_LIMITS = { voice: 350_000, image: 1_500_000, document: 3_000_000, video: 4_000_000 };
+    if (SIZE_LIMITS[type] && content && content.length > SIZE_LIMITS[type]) {
+      const labels = { voice: 'Note vocale trop longue (30s max).', image: 'Image trop lourde (1,5 Mo max).', document: 'Document trop lourd (3 Mo max).', video: 'Vidéo trop lourde (quelques secondes max, ~4 Mo).' };
+      return json(res, 413, { error: labels[type] });
     }
 
     // Retry réseau avec le même client_message_id -> on renvoie le message déjà créé, pas de doublon.
@@ -80,21 +111,23 @@ export async function handleMessages(req, res, urlPath, urlObj) {
     if (already) return json(res, 200, { message: already, deduplicated: true });
 
     const result = await db.prepare(`
-      INSERT INTO messages (client_message_id, conversation_id, sender_id, type, content, media_url, reply_to_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(client_message_id, convId, user.id, type || 'text', content || null, media_url || null, reply_to_id || null);
+      INSERT INTO messages (client_message_id, conversation_id, sender_id, type, content, media_url, filename, view_once, reply_to_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(client_message_id, convId, user.id, type || 'text', content || null, media_url || null, filename || null, view_once ? 1 : 0, reply_to_id || null);
 
     const message = await db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid);
     const memberIds = await membersOf(convId);
     notifyUsers(memberIds, 'message.new', { conversation_id: convId, message });
 
-    // Push uniquement vers les membres hors ligne : ceux connectés reçoivent déjà l'événement SSE
-    // ci-dessus, un push en plus ferait doublon (deux notifications pour le même message).
-    const offlineMemberIds = memberIds.filter(id => id !== user.id && !isOnline(id));
-    if (offlineMemberIds.length > 0) {
+    // Push envoyé à TOUS les destinataires, en ligne ou non — comme une vraie notification
+    // de téléphone : on veut que la personne le sache même si elle a l'app ouverte ailleurs
+    // (autre onglet, en arrière-plan) sans regarder cette conversation précise. Le navigateur
+    // affiche cette notification système indépendamment de l'état de la page (voir sw.js).
+    const recipientIds = memberIds.filter(id => id !== user.id);
+    if (recipientIds.length > 0) {
       const sender = await db.prepare('SELECT display_name FROM users WHERE id = ?').get(user.id);
-      const preview = (content || '').slice(0, 120) || (type === 'voice' ? 'Note vocale' : media_url ? 'Pièce jointe' : 'Nouveau message');
-      for (const id of offlineMemberIds) {
+      const preview = view_once ? '👁 Message vu unique' : (content || '').slice(0, 120) || (type === 'voice' ? 'Note vocale' : type === 'image' ? 'Photo' : type === 'video' ? 'Vidéo' : type === 'document' ? filename || 'Document' : 'Nouveau message');
+      for (const id of recipientIds) {
         const badgeCount = await totalUnreadFor(id);
         sendPushToUser(id, {
           title: sender?.display_name || 'Melora',

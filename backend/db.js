@@ -110,6 +110,9 @@ await db.exec(`
     type TEXT NOT NULL DEFAULT 'text', -- text | image | video | document | voice
     content TEXT,
     media_url TEXT,
+    filename TEXT, -- nom d'origine pour les documents
+    view_once INTEGER NOT NULL DEFAULT 0, -- message "vu unique" : masqué après consultation (sauf pour l'admin)
+    viewed_once_at TEXT,
     reply_to_id INTEGER REFERENCES messages(id),
     edited_at TEXT,
     deleted_at TEXT,
@@ -178,5 +181,18 @@ await db.exec(`
   CREATE INDEX IF NOT EXISTS idx_call_logs_users ON call_logs(caller_id, callee_id, started_at DESC);
   CREATE INDEX IF NOT EXISTS idx_statuses_expiry ON statuses(expires_at);
 `);
+
+// Migrations additives pour les bases déjà en prod (une base créée avant cet ajout a une
+// table `messages` sans ces colonnes — CREATE TABLE IF NOT EXISTS ne la retouche pas).
+// Chaque ALTER est isolé et tolérant : "duplicate column" (déjà appliqué) est ignoré sans bruit.
+const MIGRATIONS = [
+  'ALTER TABLE messages ADD COLUMN filename TEXT',
+  'ALTER TABLE messages ADD COLUMN view_once INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE messages ADD COLUMN viewed_once_at TEXT',
+];
+for (const sql of MIGRATIONS) {
+  try { await db.prepare(sql).run(); }
+  catch (err) { if (!/duplicate column/i.test(err.message)) console.error('[melora] migration échouée:', sql, err.message); }
+}
 
 export default db;
