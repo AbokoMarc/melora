@@ -80,10 +80,17 @@
   .status-ring.seen { border-color:var(--border); }
   .status-ring .avatar { width:100%; height:100%; }
   .status-time { color:var(--muted); font-size:.78rem; }
-  #statusOverlay { position:fixed; inset:0; background:#000; z-index:95; display:none; flex-direction:column; align-items:center; justify-content:center; }
-  #statusOverlay .status-card { width:min(92vw,420px); height:min(70vh,600px); border-radius:14px; display:flex; align-items:center; justify-content:center; padding:30px; text-align:center; font-size:1.4rem; font-family:Georgia,serif; color:#fff; }
-  #statusOverlay .status-top { position:absolute; top:24px; left:24px; right:24px; display:flex; gap:10px; align-items:center; color:#fff; }
-  #statusOverlay .close-x { position:absolute; top:20px; right:20px; color:#fff; font-size:1.6rem; cursor:pointer; }
+  #statusOverlay { position:fixed; inset:0; background:#000; z-index:95; display:none; flex-direction:column; }
+  #statusOverlay .status-header { display:flex; align-items:center; gap:10px; padding:16px; color:#fff; flex-shrink:0; }
+  #statusOverlay .status-header-info { flex:1; min-width:0; }
+  #statusOverlay .status-header-info strong { display:block; font-size:.95rem; }
+  #statusOverlay .status-header-info span { font-size:.72rem; color:#ccc; }
+  #statusOverlay .status-header button { background:rgba(255,255,255,.12); border:none; color:#fff; width:36px; height:36px; border-radius:50%; font-size:1.1rem; cursor:pointer; flex-shrink:0; }
+  #statusOverlay .status-body { flex:1; position:relative; display:flex; align-items:center; justify-content:center; padding:20px; overflow:hidden; }
+  #statusOverlay .status-card { width:min(92vw,420px); height:100%; max-height:min(65vh,560px); border-radius:14px; display:flex; align-items:center; justify-content:center; padding:30px; text-align:center; font-size:1.4rem; font-family:Georgia,serif; color:#fff; word-wrap:break-word; }
+  #statusOverlay .status-zone { position:absolute; top:0; bottom:0; width:32%; cursor:pointer; }
+  #statusOverlay .status-zone.prev { left:0; }
+  #statusOverlay .status-zone.next { right:0; }
   #statusComposer { position:fixed; inset:0; background:var(--bg); z-index:95; display:none; flex-direction:column; padding:20px; }
   #statusComposer textarea { flex:1; background:none; border:none; color:#fff; font-size:1.6rem; font-family:Georgia,serif; text-align:center; resize:none; outline:none; }
   #statusComposer .swatches { display:flex; gap:10px; justify-content:center; padding:14px 0; }
@@ -313,9 +320,16 @@
 </div>
 
 <div id="statusOverlay">
-  <div class="close-x" onclick="closeStatusOverlay()" style="position:absolute;top:20px;right:24px;color:#fff;font-size:1.6rem;cursor:pointer;">✕</div>
-  <div class="status-top" id="statusOverlayTop"></div>
-  <div class="status-card" id="statusOverlayCard"></div>
+  <div class="status-header">
+    <div id="statusOverlayTop" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"></div>
+    <button id="statusDeleteBtn" onclick="deleteCurrentStatus()" title="Retirer ce statut" style="display:none;">🗑️</button>
+    <button onclick="closeStatusOverlay()" title="Fermer">✕</button>
+  </div>
+  <div class="status-body">
+    <div class="status-zone prev" onclick="prevStatus()"></div>
+    <div class="status-card" id="statusOverlayCard"></div>
+    <div class="status-zone next" onclick="nextStatus()"></div>
+  </div>
 </div>
 
 <div id="statusComposer">
@@ -741,7 +755,10 @@ async function loadStatuses() {
   const byAuthor = new Map();
   statuses.forEach(s => { if (!byAuthor.has(s.user_id)) byAuthor.set(s.user_id, []); byAuthor.get(s.user_id).push(s); });
   list.innerHTML = '';
+  allStatusItems = []; // liste à plat, dans l'ordre d'affichage, pour naviguer d'une personne à l'autre
   for (const [, items] of byAuthor) {
+    const startIndex = allStatusItems.length;
+    allStatusItems.push(...items);
     const s = items[0];
     const allSeen = items.every(x => x.viewed_by_me);
     const div = document.createElement('div');
@@ -749,37 +766,63 @@ async function loadStatuses() {
     div.innerHTML = `
       <div class="status-ring${allSeen ? ' seen' : ''}"><div class="avatar" style="background:${s.bg_color}">${s.author_name[0].toUpperCase()}</div></div>
       <div><div style="font-weight:600;font-size:.9rem;">${s.author_name}</div><div class="status-time">${items.length} statut${items.length > 1 ? 's' : ''}</div></div>`;
-    div.onclick = () => viewStatusGroup(items, 0);
+    div.onclick = () => openStatusViewer(startIndex);
     list.appendChild(div);
   }
 }
 
-let statusGroupQueue = [];
-let statusGroupIndex = 0;
-function viewStatusGroup(items, index) {
-  statusGroupQueue = items;
-  statusGroupIndex = index;
-  showStatusAt(index);
+// Navigation à plat sur TOUS les statuts (comme WhatsApp : après le dernier statut d'une
+// personne, on passe directement au premier de la suivante, sans repasser par la liste).
+let allStatusItems = [];
+let statusIndex = 0;
+
+function openStatusViewer(index) {
+  statusIndex = index;
   document.getElementById('statusOverlay').style.display = 'flex';
+  showCurrentStatus();
 }
-function showStatusAt(i) {
-  const s = statusGroupQueue[i];
+function showCurrentStatus() {
+  const s = allStatusItems[statusIndex];
   if (!s) return closeStatusOverlay();
-  document.getElementById('statusOverlayTop').innerHTML = `<div class="avatar" style="width:32px;height:32px;background:${s.bg_color}">${s.author_name[0].toUpperCase()}</div><strong>${s.author_name}</strong>`;
+  const mine = Number(s.user_id) === Number(me.id);
+  document.getElementById('statusOverlayTop').innerHTML = `
+    <div class="avatar" style="width:34px;height:34px;background:${s.bg_color};flex-shrink:0;">${s.author_name[0].toUpperCase()}</div>
+    <div style="min-width:0;"><strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.author_name}</strong><span style="font-size:.72rem;color:#ccc;">${new Date(s.created_at).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>`;
   const card = document.getElementById('statusOverlayCard');
   card.style.background = s.bg_color;
   card.textContent = s.content;
-  api(`/api/statuses/${s.id}/view`, 'POST', {});
+  document.getElementById('statusDeleteBtn').style.display = mine ? 'inline-block' : 'none';
+  if (!mine) api(`/api/statuses/${s.id}/view`, 'POST', {});
 }
-document.getElementById('statusOverlayCard').addEventListener('click', () => {
-  statusGroupIndex++;
-  if (statusGroupIndex >= statusGroupQueue.length) return closeStatusOverlay();
-  showStatusAt(statusGroupIndex);
-});
+function nextStatus() {
+  statusIndex++;
+  if (statusIndex >= allStatusItems.length) return closeStatusOverlay();
+  showCurrentStatus();
+}
+function prevStatus() {
+  if (statusIndex <= 0) return;
+  statusIndex--;
+  showCurrentStatus();
+}
+async function deleteCurrentStatus() {
+  const s = allStatusItems[statusIndex];
+  if (!s) return;
+  if (!confirm('Retirer ce statut ? Il ne sera plus visible par personne.')) return;
+  const res = await api(`/api/statuses/${s.id}`, 'DELETE', {});
+  if (!res || res.error) return alert(res?.error || 'Échec de la suppression.');
+  allStatusItems.splice(statusIndex, 1);
+  if (statusIndex >= allStatusItems.length) return closeStatusOverlay();
+  showCurrentStatus();
+}
 function closeStatusOverlay() {
   document.getElementById('statusOverlay').style.display = 'none';
   loadStatuses();
 }
+// Filets de sécurité supplémentaires pour toujours pouvoir sortir : Échap au clavier,
+// et un clic n'importe où dans l'en-tête en dehors des boutons (au cas où un tap zone empièterait).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('statusOverlay').style.display === 'flex') closeStatusOverlay();
+});
 
 // --- Journal des appels ---
 let callFilter = 'all';

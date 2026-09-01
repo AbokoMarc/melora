@@ -49,5 +49,19 @@ export async function handleStatuses(req, res, urlPath) {
     return json(res, 200, { success: true });
   }
 
+  // --- Retirer son propre statut avant son expiration naturelle ---
+  const deleteMatch = urlPath.match(/^\/api\/statuses\/(\d+)$/);
+  if (deleteMatch && req.method === 'DELETE') {
+    const user = await requireActiveUser(req, res);
+    if (!user) return;
+    const statusId = Number(deleteMatch[1]);
+    const status = await db.prepare('SELECT user_id FROM statuses WHERE id = ?').get(statusId);
+    if (!status) return json(res, 404, { error: 'Statut introuvable.' });
+    if (status.user_id !== user.id) return json(res, 403, { error: "Tu ne peux retirer que tes propres statuts." });
+    await db.prepare('DELETE FROM status_views WHERE status_id = ?').run(statusId);
+    await db.prepare('DELETE FROM statuses WHERE id = ?').run(statusId);
+    return json(res, 200, { success: true });
+  }
+
   return null;
 }
