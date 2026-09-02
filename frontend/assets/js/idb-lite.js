@@ -65,7 +65,10 @@ window.idbLite = {
         const getReq = idx.get(m.client_message_id);
         getReq.onsuccess = () => {
           const existing = getReq.result;
-          store.put({ ...m, conversation_id: conversationId, local_id: existing?.local_id });
+          const record = { ...m, conversation_id: conversationId };
+          delete record.local_id; // jamais explicitement undefined : ça casse l'autoIncrement d'IndexedDB
+          if (existing) record.local_id = existing.local_id; // sinon on laisse l'autoIncrement assigner une nouvelle clé
+          store.put(record);
         };
       });
       t.oncomplete = () => resolve();

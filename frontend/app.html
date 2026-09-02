@@ -222,7 +222,7 @@
       <div id="convList" class="scroll-list"></div>
     </div>
 
-    <div id="paneStatuses" hidden style="display:flex;flex-direction:column;height:100%;">
+    <div id="paneStatuses" style="display:none;flex-direction:column;height:100%;">
       <div class="pane-header">Statuts</div>
       <div class="status-add-row" onclick="openStatusComposer()">
         <div class="avatar" id="myStatusAvatar">?<span class="plus">+</span></div>
@@ -231,7 +231,7 @@
       <div id="statusList" class="scroll-list"></div>
     </div>
 
-    <div id="paneCalls" hidden style="display:flex;flex-direction:column;height:100%;">
+    <div id="paneCalls" style="display:none;flex-direction:column;height:100%;">
       <div class="pane-header">Appels</div>
       <div class="filter-chips">
         <button class="chip active" id="chipCallsAll" onclick="setCallFilter('all')">Tous</button>
@@ -240,7 +240,7 @@
       <div id="callList" class="scroll-list"></div>
     </div>
 
-    <div id="paneSettings" hidden>
+    <div id="paneSettings" style="display:none;">
       <div class="pane-header">Paramètres</div>
       <div class="settings-avatar" id="settingsAvatar">?</div>
       <div class="settings-field">
@@ -409,10 +409,13 @@ setTheme(localStorage.getItem('melora_theme') || 'light');
 
 // --- Navigation entre les 4 onglets ---
 let currentView = 'chats';
+const PANE_DISPLAY = { Chats: 'block', Statuses: 'flex', Calls: 'flex', Settings: 'block' };
 function switchView(view) {
   currentView = view;
   ['Chats', 'Statuses', 'Calls', 'Settings'].forEach(v => {
-    document.getElementById('pane' + v).hidden = v.toLowerCase() !== view;
+    // display, pas hidden : un hidden="" perd toujours face à un style="display:..." en ligne
+    // sur le même élément (les panneaux Statuts/Appels en ont besoin pour leur mise en page flex).
+    document.getElementById('pane' + v).style.display = (v.toLowerCase() === view) ? PANE_DISPLAY[v] : 'none';
   });
   ['rail', 'nav'].forEach(prefix => {
     ['Chats', 'Statuses', 'Calls', 'Settings'].forEach(v => {
