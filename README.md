@@ -23,7 +23,7 @@ Turso (SQLite hébergé), SSE pour le temps réel, WebRTC natif pour les appels.
 - **Écran de conversation vide sans explication** — ajout d'un état vide explicite ("Aucun message pour l'instant") au lieu d'un blanc silencieux qui donnait l'impression que l'app était cassée.
 - **Comparaisons d'identifiants fragilisées** (`sender_id === me.id`) — passées en `Number(...)` des deux côtés par précaution, au cas où le driver Turso renverrait un entier sous une forme différente selon le contexte.
 
-## Pas encore fait - to be done
+## Pas encore fait - to be done today
 
 - Statuts image/vidéo (texte seulement pour l'instant)
 - Appels en groupe (uniquement 1-à-1)
